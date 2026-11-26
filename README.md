@@ -8,7 +8,7 @@ Developed by **Kazim Radfar**, PhD student in Medical Physics.
 
 - **Download for Windows:** [latest release](https://github.com/kazimradfar/PyTPS/releases/latest) (setup program or portable zip)
 - **User manual:** [docs/USER_MANUAL.md](docs/USER_MANUAL.md) (also in the program: Help ▸ User manual, Shift + F1)
-- **Changing the program:** [docs/EDITING_GUIDE.md](docs/EDITING_GUIDE.md) (how to add, remove or change anything)
+
 
 > **Not for clinical use.** PyTPS is not a medical device, is not commissioned for any treatment machine
 > and must not be used to plan, check or deliver patient treatments. The beam data are generic teaching values.
