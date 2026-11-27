@@ -112,3 +112,45 @@ def test_drag_every_jaw_real_mouse(layout):
     failed = [r for r in results if r[3] != "ok"]
     assert results and not failed, failed
     w.close()
+
+
+def test_rotate_gantry_with_mouse():
+    import numpy as np
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from pytps.gui.main_window import MainWindow
+    app = _app()
+    w = MainWindow(); w.resize(1500, 900); w.show(); app.processEvents()
+    w.patient.load_phantom("Pelvis (prostate)")
+    w.show_planning(0)
+    w.beams_panel.add_static()
+    st = w.state; b = st.plan.beams[0]
+    st.set_cursor(b.iso.copy()); app.processEvents()
+    tv, cor = w.views[0], w.views[1]
+    assert cor._gantry_handles(b) == []                 # couch 0: the gantry turns in the transverse plane only
+    hs = tv._gantry_handles(b)
+    assert len(hs) == 1 and hs[0][0] == "start"
+    hp = hs[0][2]
+    assert tv._field_hit(hp)[0] == "gantry"
+    q0, d0, d90, ok = tv._gantry_dirs(b)
+    for target in (45.0, 270.0, 123.0):
+        hp = tv._gantry_handles(b)[0][2]
+        R = np.hypot(hp.x() - q0.x(), hp.y() - q0.y())
+        t = np.radians(target); d = np.cos(t) * d0 + np.sin(t) * d90
+        end = QPointF(q0.x() + R * d[0], q0.y() + R * d[1])
+        _send(app, tv, QEvent.MouseMove, hp, Qt.NoButton, Qt.NoButton)
+        _send(app, tv, QEvent.MouseButtonPress, hp, Qt.LeftButton, Qt.LeftButton)
+        for k in range(1, 9):                            # along the circle
+            f = k / 8
+            mid = (1 - f) * np.array([hp.x(), hp.y()]) + f * np.array([end.x(), end.y()])
+            _send(app, tv, QEvent.MouseMove, QPointF(*mid) if k < 8 else end, Qt.NoButton, Qt.LeftButton)
+        _send(app, tv, QEvent.MouseButtonRelease, end, Qt.LeftButton, Qt.NoButton)
+        assert abs(((b.gantry - target) + 180) % 360 - 180) <= 1.0, (target, b.gantry)
+        assert w.beams_panel.gspin.value() == round(target) % 360
+    # arc: start and stop handles
+    w.beams_panel.add_arc(); a = st.plan.beam(st.cur_beam); app.processEvents()
+    keys = [h[0] for h in tv._gantry_handles(a)]
+    assert keys == ["start", "stop"]
+    # the dial in the Beams tab turns the gantry of the selected beam
+    w.beams_panel.gdial.setValue((30 + 180) % 360); app.processEvents()
+    assert abs(a.gantry - 30) < 0.5
+    w.close()

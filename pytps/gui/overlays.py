@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF
 
 from ..core.beams import SAD, Frame
@@ -209,6 +209,21 @@ class BeamOverlay:
                     p.drawLine(S(src[ax[0]], src[ax[1]]), S(end[ax[0]], end[ax[1]]))
                     lab = b.iso + fr.source * 0.2
                     p.setPen(col); p.drawText(S(lab[ax[0]], lab[ax[1]]) + QPointF(4, -4), f"{b.name}  G{cp.gantry:.0f}")
+            # gantry handles of the current beam: drag them around the isocentre to rotate the gantry
+            if cur and hasattr(view, "_gantry_handles"):
+                handles = view._gantry_handles(b)
+                q0 = S(b.iso[ax[0]], b.iso[ax[1]])
+                for key, g, hp in handles:
+                    faint = QColor(col); faint.setAlpha(110)
+                    p.setPen(QPen(faint, 1, Qt.DotLine)); p.drawLine(q0, hp)
+                    p.setPen(QPen(QColor(255, 255, 255), 1.5)); p.setBrush(QBrush(col))
+                    if key == "start":
+                        p.drawEllipse(hp, 6.5, 6.5)
+                    else:
+                        p.drawRect(QRectF(hp.x() - 5.5, hp.y() - 5.5, 11, 11))
+                    p.setBrush(Qt.NoBrush)
+                    p.setPen(col)
+                    p.drawText(hp + QPointF(9, -7), f"G {g:.0f}°" if key == "start" else f"stop {g:.0f}°")
             # isocentre marker
             if abs(b.iso[n] - c) < 3:
                 q = S(b.iso[ax[0]], b.iso[ax[1]])

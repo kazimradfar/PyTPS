@@ -317,6 +317,13 @@ In the transverse, coronal and sagittal views (crosshair tool):
   in 1 mm steps; the status bar shows the jaw positions and the field size.
 - Drag the **red isocentre cross** to move the isocentre. All beams that share it move together and arcs keep their
   MLC (like a set-up shift).
+- **Rotate the gantry:** in the transverse view the selected beam has a round **gantry handle** on its central axis
+  (labelled *G 45°*). Point at it (open hand), drag it around the isocentre and the gantry follows in 1° steps, or
+  5° steps with Shift held. An arc has a second, square handle for its stop angle. The handle appears in the
+  view in which the gantry rotates: the transverse view at couch 0°, another view when the couch is turned.
+- The **Gantry dial** in *Selected beam* (Beams tab) does the same: turn it with the mouse or the wheel, or type the
+  angle next to it. 0° is at the top of the dial.
+- Changing the gantry, the jaws or the isocentre removes the dose of that beam; press **Calculate** (F5) again.
 - In the **BEV**, drag the jaws or the MLC leaves (leaf editing sets the MLC to *manual*).
 
 ### 8.3 Beam's-eye view (BEV)
@@ -603,6 +610,7 @@ Which cost function controls the mean lung dose, and what does it cost in PTV co
 | middle drag | pan |
 | right drag | window / level (polygon tool: close the polygon) |
 | drag a field edge or the isocentre | resize the field / move the isocentre |
+| drag the round gantry handle (transverse view) | rotate the gantry (Shift: 5° steps) |
 | right click on DVH or profile | save image, copy image, export CSV |
 | double click on the profile | change its direction |
 

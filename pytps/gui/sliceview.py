@@ -26,6 +26,7 @@ class SliceView(QWidget):
         self._ct_qimage = None
         self._contour_cache = {}
         self._drag = None
+        self._shift = False
         self._poly: list = []
         self._ruler = None
         self._mouse = None
@@ -245,6 +246,9 @@ class SliceView(QWidget):
         else:
             hit = self._field_hit(pos)
             if hit is not None:
+                self._shift = bool(ev.modifiers() & Qt.ShiftModifier)
+                if hit[0] == "gantry":
+                    self.setCursor(Qt.ClosedHandCursor)
                 self._drag = ("field",) + hit; return
             self._drag = ("cursor",); self.state.set_cursor(self.world_point(pos.x(), pos.y()))
 
@@ -258,6 +262,40 @@ class SliceView(QWidget):
         cp = cps[min(st.cp_index, len(cps) - 1)] if b.kind == "ARC" else cps[0]
         return b, cp
 
+    def _gantry_dirs(self, b):
+        """Unit screen directions of the source for gantry 0 and 90 (couch and collimator of the beam), the
+        isocentre on screen, and whether the gantry rotates in the plane of this view."""
+        from ..core.beams import ControlPoint, Frame
+        a = self._ax()
+        _, S, _ = self.mapping()
+        q0 = S(b.iso[a[0]], b.iso[a[1]])
+        dirs, src = [], []
+        for g in (0.0, 90.0):
+            fr = Frame(ControlPoint(g, b.collimator, b.couch, b.x1, b.x2, b.y1, b.y2), b.iso, b.orientation)
+            src.append(fr.source / np.linalg.norm(fr.source))
+            p1 = S(b.iso[a[0]] + 100 * src[-1][a[0]], b.iso[a[1]] + 100 * src[-1][a[1]])
+            d = np.array([p1.x() - q0.x(), p1.y() - q0.y()])
+            dirs.append(d / (np.linalg.norm(d) + 1e-9))
+        rot_axis = np.cross(src[0], src[1])
+        in_plane = abs(rot_axis[a[2]]) > 0.9 and abs(b.iso[a[2]] - self.state.cursor[a[2]]) < 40
+        return q0, dirs[0], dirs[1], in_plane
+
+    def _gantry_handles(self, b):
+        """Round handles on the central axis of the current beam (start, and stop for arcs) in the view where the
+        gantry rotates (the transverse view for a couch angle of 0). Drag them to rotate the gantry."""
+        if b is None or self.state.image is None:
+            return []
+        q0, d0, d90, in_plane = self._gantry_dirs(b)
+        if not in_plane:
+            return []
+        R = float(np.clip(0.36 * min(self.width(), self.height()), 40, 170))
+        out = []
+        for key, g in (("start", b.gantry),) + ((("stop", b.arc_stop),) if b.kind == "ARC" else ()):
+            t = np.radians(g)
+            d = np.cos(t) * d0 + np.sin(t) * d90
+            out.append((key, g, QPointF(q0.x() + R * d[0], q0.y() + R * d[1])))
+        return out
+
     def _field_hit(self, pos):
         """Which handle of the current beam is under the mouse: the isocentre or a jaw edge (in this slice)."""
         from ..core.beams import SAD, Frame
@@ -269,6 +307,9 @@ class SliceView(QWidget):
         q = S(b.iso[a[0]], b.iso[a[1]])
         if abs(b.iso[a[2]] - self.state.cursor[a[2]]) < 5 and (q - pos).manhattanLength() < 10:
             return ("iso", b.name)
+        for key, _g, hp in self._gantry_handles(b):
+            if (hp - pos).manhattanLength() < 12:
+                return ("gantry", b.name, key)
         fr = Frame(cp, b.iso, b.orientation)
         u, v, d = fr.project(self.world_point(pos.x(), pos.y())[None])
         if d[0] <= 1:
@@ -286,6 +327,21 @@ class SliceView(QWidget):
         st = self.state
         b = st.plan.beam(d[2]) if st.plan else None
         if b is None:
+            return
+        if d[1] == "gantry":
+            q0, d0, d90, _ = self._gantry_dirs(b)
+            m = np.array([pos.x() - q0.x(), pos.y() - q0.y()])
+            if np.linalg.norm(m) < 5:
+                return
+            g = float(np.degrees(np.arctan2(m @ d90, m @ d0))) % 360
+            step = 5.0 if self._shift else 1.0
+            g = float(np.round(g / step) * step) % 360
+            setattr(b, "gantry" if d[3] == "start" else "arc_stop", g)
+            b.cps = []
+            st.plan.beam_dose.pop(b.name, None)
+            st.message.emit(f"{b.name}: gantry {b.gantry:.0f}°" + (f" → {b.arc_stop:.0f}° ({b.arc_dir})" if b.kind == "ARC" else "")
+                            + "   (Shift: 5° steps)")
+            st.changed.emit("beam")
             return
         if d[1] == "iso":
             old = b.iso.copy()
@@ -319,6 +375,7 @@ class SliceView(QWidget):
 
     def mouseMoveEvent(self, ev):
         pos = ev.position()
+        self._shift = bool(ev.modifiers() & Qt.ShiftModifier)
         self._mouse = pos
         st = self.state
         if st.image is not None:
@@ -336,6 +393,8 @@ class SliceView(QWidget):
                 if hit is not None:
                     if hit[0] == "iso":
                         shape = Qt.SizeAllCursor
+                    elif hit[0] == "gantry":
+                        shape = Qt.OpenHandCursor
                     else:
                         b, cp = self._cur_beam()
                         from ..core.beams import Frame
@@ -365,6 +424,8 @@ class SliceView(QWidget):
         if self._drag and self._drag[0] == "brush":
             self.state.end_edit()
         if self._drag and self._drag[0] == "field":
+            if self._drag[1] == "gantry":
+                self.setCursor(Qt.OpenHandCursor)
             self.state.changed.emit("plan")
         self._drag = None
         if getattr(self, "_activate_on_release", False):

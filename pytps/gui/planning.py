@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDial, QDoubleSpinBox, QFormLayout, QGroupBox,
                                QHBoxLayout, QHeaderView, QLabel, QMessageBox, QProgressDialog, QPushButton, QSpinBox,
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -78,6 +78,17 @@ class BeamsPanel(QWidget):
 
         g2 = QGroupBox("Selected beam")
         f2 = QFormLayout(g2)
+        # gantry dial: turn it with the mouse (drag or wheel); 0° at the top as seen from the foot of the couch
+        gw = QWidget(); gl2 = QHBoxLayout(gw); gl2.setContentsMargins(0, 0, 0, 0)
+        self.gdial = QDial(); self.gdial.setRange(0, 359); self.gdial.setWrapping(True); self.gdial.setNotchesVisible(True)
+        self.gdial.setNotchTarget(15); self.gdial.setFixedSize(56, 56)
+        self.gdial.setToolTip("Turn to rotate the gantry of the selected beam (or drag the round handle in the transverse view)")
+        self.gspin = _dspin(0, 359, 0, 0, 1, " °"); self.gspin.setWrapping(True)
+        self.gdial.valueChanged.connect(lambda v: self._gantry((v + 180) % 360, final=not self.gdial.isSliderDown()))
+        self.gdial.sliderReleased.connect(lambda: self._gantry(None, final=True))
+        self.gspin.valueChanged.connect(lambda v: self._gantry(v, final=True))
+        gl2.addWidget(self.gdial); gl2.addWidget(self.gspin); gl2.addStretch(1)
+        f2.addRow("Gantry", gw)
         self.mlc_target = QComboBox(); self.mlc_margin = _dspin(-20, 50, 1, 5, 0.5, " mm")
         self.mlc_target.currentTextChanged.connect(lambda t: self._set("mlc_target", t)); self.mlc_margin.valueChanged.connect(lambda v: self._set("mlc_margin", v))
         f2.addRow("MLC fits to", self.mlc_target); f2.addRow("MLC margin", self.mlc_margin)
@@ -103,6 +114,31 @@ class BeamsPanel(QWidget):
     def _changed(self, what):
         if what in ("image", "plan", "dose", "structures"):
             self.refresh()
+        elif what == "beam":
+            self._sync_gantry(self.cur())
+
+    def _sync_gantry(self, b):
+        if b is None:
+            return
+        for w, v in ((self.gdial, int(round(b.gantry + 180)) % 360), (self.gspin, round(b.gantry) % 360)):
+            if w.value() != v:
+                w.blockSignals(True); w.setValue(v); w.blockSignals(False)
+
+    def _gantry(self, g, final):
+        """Gantry of the selected beam from the dial or the spin box; while the dial turns only the views follow,
+        the table is updated when it is released."""
+        if self._filling:
+            return
+        b = self.cur()
+        if b is None:
+            return
+        if g is not None:
+            b.gantry = float(g) % 360; b.cps = []
+            if self.state.plan is not None:
+                self.state.plan.beam_dose.pop(b.name, None)
+            self._sync_gantry(b)
+            self.state.message.emit(f"{b.name}: gantry {b.gantry:.0f}°")
+        self.state.changed.emit("plan" if final else "beam")
 
     def refresh(self):
         st = self.state
@@ -140,6 +176,7 @@ class BeamsPanel(QWidget):
             self.mlc_target.setCurrentText(b.mlc_target or "(target)")
             for s, v in zip(self.iso, b.iso):
                 s.blockSignals(True); s.setValue(v / 10); s.blockSignals(False)
+            self._sync_gantry(b)
             for w, val in ((self.mlc_margin, b.mlc_margin), (self.cpsp, b.cp_spacing)):
                 w.blockSignals(True); w.setValue(val); w.blockSignals(False)
             for w, val in ((self.wdir, b.wedge.direction), (self.arcdir, b.arc_dir), (self.orient, b.orientation)):
