@@ -18,7 +18,7 @@ def _send(app, v, kind, pt, button, buttons):
     app.processEvents()
 
 
-def _find_edges(v, step=3):
+def _find_edges(v, step=4):
     """Screen points where each jaw of the current beam can be grabbed in view v."""
     from PySide6.QtCore import QPointF
     found = {}
@@ -57,10 +57,12 @@ def _check_view(app, w, v, b, results, tag):
         for sense in (+1, -1):                       # +1 larger field, -1 smaller
             b.x1, b.x2, b.y1, b.y2 = jaws0; b.cps = []
             st.set_cursor(b.iso.copy()); st.changed.emit("beam"); app.processEvents()
-            pts = _find_edges(v)
-            if jaw not in pts:
-                results.append((tag, jaw, sense, "edge lost")); continue
-            pt = pts[jaw]
+            h = v._field_hit(pt)
+            if h is None or h[2] != jaw:              # the layout may have changed after the last click
+                pts = _find_edges(v)
+                if jaw not in pts:
+                    results.append((tag, jaw, sense, "edge lost")); continue
+                pt = pts[jaw]
             # screen direction in which this jaw moves outwards
             cps = b.control_points(); fr = Frame(cps[0], b.iso, b.orientation)
             ax = fr.X if jaw[0] == "x" else fr.Y

@@ -124,6 +124,9 @@ jobs:
           $t = Start-Process "$app\PyTPS.exe" -ArgumentList "--self-test", "$env:GITHUB_WORKSPACE\installed_selftest.json" -Wait -PassThru
           Get-Content "$env:GITHUB_WORKSPACE\installed_selftest.json"
           if ($t.ExitCode -ne 0) { Write-Error "installed program failed its self-test"; exit 1 }
+          $g = Start-Process "$app\PyTPS.exe" -ArgumentList "--self-test-gui", "$env:GITHUB_WORKSPACE\installed_gui.json" -Wait -PassThru
+          Get-Content "$env:GITHUB_WORKSPACE\installed_gui.json"
+          if ($g.ExitCode -ne 0) { Write-Error "mouse editing failed in the installed program"; exit 1 }
           $u = Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait -PassThru
           Start-Sleep 5
           if (Test-Path "$app\PyTPS.exe") { Write-Error "program still present after uninstall"; exit 1 }

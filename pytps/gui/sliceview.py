@@ -15,7 +15,7 @@ LABELS = {"axial": ("R", "L", "A", "P"), "coronal": ("R", "L", "H", "F"), "sagit
 
 
 class SliceView(QWidget):
-    activated = Signal(object)          # emitted on mouse press (to make this the focused view)
+    activated = Signal(object)          # emitted after a click (to make this the focused view)
 
     def __init__(self, state, view, parent=None):
         super().__init__(parent)
@@ -220,8 +220,8 @@ class SliceView(QWidget):
     def mousePressEvent(self, ev):
         if self.state.image is None:
             return
-        self.activated.emit(self)
-        pos = ev.position()
+        self._activate_on_release = True     # enlarge this view after the click, not before (the layout would move
+        pos = ev.position()                  # the field under the mouse and the edge could not be grabbed)
         tool = self.state.tool
         if ev.button() == Qt.MiddleButton or (ev.button() == Qt.LeftButton and tool == "pan"):
             self._drag = ("pan", pos, QPointF(self.pan)); return
@@ -367,6 +367,9 @@ class SliceView(QWidget):
         if self._drag and self._drag[0] == "field":
             self.state.changed.emit("plan")
         self._drag = None
+        if getattr(self, "_activate_on_release", False):
+            self._activate_on_release = False
+            self.activated.emit(self)
 
     def leaveEvent(self, ev):
         self._mouse = None; self.update()
