@@ -196,8 +196,11 @@ def self_test_gui(out_path):
             QApplication.sendEvent(v, ev); app.processEvents()
 
         ok_all = True
+        jaws0 = (b.x1, b.x2, b.y1, b.y2)
         for name, v in zip(("Transverse", "Coronal", "Sagittal"), w.views[:3]):
             r = {}
+            b.x1, b.x2, b.y1, b.y2 = jaws0; b.cps = []      # same field in every view
+            st.set_cursor(b.iso.copy()); st.changed.emit("beam"); app.processEvents()
             found = None
             for yy in range(4, v.height() - 4, 2):           # find a jaw edge of the beam in this view
                 for xx in range(4, v.width() - 4, 2):
