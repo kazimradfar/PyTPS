@@ -1,0 +1,12 @@
+{
+  "title": "PyTPS: an educational radiotherapy treatment planning system",
+  "upload_type": "software",
+  "description": "PyTPS is a free, open-source radiotherapy treatment planning system for teaching medical physics students. It covers DICOM CT import, contouring, static fields and VMAT arcs, pencil-beam dose calculation, IMRT and VMAT optimisation, DVH evaluation and plan comparison, with a beam's-eye view, 3D and treatment room views and a guided VMAT-TBI exercise. It is not intended for clinical use.",
+  "creators": [
+    {"name": "Radfar, Kazim", "affiliation": "Tehran University of Medical Sciences"}
+  ],
+  "license": "MIT",
+  "access_right": "open",
+  "keywords": ["radiotherapy", "treatment planning", "medical physics", "education", "IMRT", "VMAT",
+               "total body irradiation", "dose calculation"]
+}

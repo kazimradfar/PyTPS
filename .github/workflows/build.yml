@@ -80,7 +80,7 @@ jobs:
           cache-dependency-path: requirements.txt
       - run: python -m pip install -r requirements.txt pyinstaller
       - name: Build PyTPS.exe
-        run: python -m PyInstaller --noconfirm --clean --windowed --name PyTPS --icon pytps/resources/pytps.ico --add-data "pytps/resources;pytps/resources" --add-data "docs;docs" --collect-submodules pydicom --collect-submodules skimage.measure run_pytps.py
+        run: python -m PyInstaller --noconfirm --clean --windowed --name PyTPS --icon pytps/resources/pytps.ico --add-data "pytps/resources;pytps/resources" --add-data "docs;docs" --add-data "LICENSE;." --add-data "THIRD_PARTY_LICENSES.md;." --collect-submodules pydicom --collect-submodules skimage.measure run_pytps.py
       - name: Self-test of the built program
         shell: pwsh
         run: |
@@ -116,7 +116,9 @@ jobs:
       - name: Publish release (tag v<version>, marked as the latest release)
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
+          # with the repository secret RELEASE_TOKEN (a personal access token) the release is published in the owner's
+          # name; without it, by github-actions[bot]
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
         run: |
           $v = python -c "import pytps; print(pytps.__version__)"
           $tag = "v$v"

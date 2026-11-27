@@ -134,7 +134,13 @@ Patient coordinates are DICOM (LPS, mm): +x patient left, +y posterior, +z head.
 supine patient, gantry 0° is an anterior beam and gantry 90° enters from the patient's left.
 Field coordinates X and Y are at the isocentre plane; MLC leaves move along X.
 
+## Citation
+
+If you use PyTPS in teaching or research, please cite it. GitHub's **Cite this repository** button (right side of
+the repository page) gives the reference in APA and BibTeX from `CITATION.cff`.
+
 ## Licence
 
-MIT, see `LICENSE`. Data you import stay on your computer; please use de-identified data and follow the rules
+MIT, see `LICENSE`. The Windows program also contains third-party software under its own licences, listed in
+`THIRD_PARTY_LICENSES.md`. Data you import stay on your computer; please use de-identified data and follow the rules
 of your institution.

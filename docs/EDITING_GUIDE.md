@@ -320,6 +320,7 @@ To build locally on Windows instead:
 python -m pip install pyinstaller
 python -m PyInstaller --noconfirm --clean --windowed --name PyTPS --icon pytps/resources/pytps.ico ^
   --add-data "pytps/resources;pytps/resources" --add-data "docs;docs" ^
+  --add-data "LICENSE;." --add-data "THIRD_PARTY_LICENSES.md;." ^
   --collect-submodules pydicom --collect-submodules skimage.measure run_pytps.py
 dist\PyTPS\PyTPS.exe --self-test result.json
 ```
