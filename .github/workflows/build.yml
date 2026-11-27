@@ -7,7 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       build_windows:
-        description: "Build the Windows program and publish the release"
+        description: "Build the Windows program"
+        type: boolean
+        default: true
+      publish:
+        description: "Publish the release (untick for a test build only)"
         type: boolean
         default: true
 
@@ -32,6 +36,10 @@ jobs:
         run: python -m pip install -r requirements.txt pytest
       - name: Tests
         run: python -m pytest tests -q
+      - name: Mouse editing of fields with real mouse events (from source)
+        run: |
+          rc=0; python -m pytps --self-test-gui gui_selftest.json || rc=$?
+          cat gui_selftest.json; exit $rc
       - name: Screenshots
         run: |
           mkdir -p shots
@@ -88,6 +96,15 @@ jobs:
           Get-Content "$env:GITHUB_WORKSPACE\built_selftest.json"
           "{0:N0} MB" -f ((Get-ChildItem dist\PyTPS -Recurse | Measure-Object Length -Sum).Sum / 1MB)
           if ($p.ExitCode -ne 0) { Write-Error "self-test failed ($($p.ExitCode))"; exit 1 }
+      - name: Mouse editing of fields in the built program (native Windows platform) and from source
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\PyTPS\PyTPS.exe -ArgumentList "--self-test-gui", "$env:GITHUB_WORKSPACE\built_gui.json" -Wait -PassThru
+          "--- built program"; Get-Content "$env:GITHUB_WORKSPACE\built_gui.json"
+          python -m pip install -q -r requirements.txt
+          python -m pytps --self-test-gui "$env:GITHUB_WORKSPACE\source_gui.json"
+          "--- from source"; Get-Content "$env:GITHUB_WORKSPACE\source_gui.json"
+          if ($p.ExitCode -ne 0) { Write-Error "mouse editing failed in the built program"; exit 1 }
       - name: Build setup wizard
         shell: pwsh
         run: |
@@ -114,6 +131,7 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path dist\PyTPS -DestinationPath installer_out\PyTPS_portable.zip
       - name: Publish release (tag v<version>, marked as the latest release)
+        if: inputs.publish
         shell: pwsh
         env:
           # with the repository secret RELEASE_TOKEN (a personal access token) the release is published in the owner's

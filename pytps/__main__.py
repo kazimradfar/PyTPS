@@ -23,9 +23,13 @@ def main(argv=None):
     ap.add_argument("--export", default="", help="with --demo-plan: write DVH/profile images and CSV files with this prefix (for tests)")
     ap.add_argument("--screenshot", help="save a screenshot after start and quit (for tests)")
     ap.add_argument("--self-test", dest="self_test", help="run a short check of the installed program and write the result (JSON)")
+    ap.add_argument("--self-test-gui", dest="self_test_gui",
+                    help="check mouse editing of fields with real mouse events, as a user does it (JSON report)")
     a = ap.parse_args(argv)
     if a.self_test:
         return self_test(a.self_test)
+    if a.self_test_gui:
+        return self_test_gui(a.self_test_gui)
 
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
@@ -38,6 +42,7 @@ def main(argv=None):
     apply_theme(app)
     _set_icon(app)
     w = MainWindow()
+    _install_error_log(w)
     W, H = (int(v) for v in a.size.lower().split("x"))
     w.resize(W, H)
     w.show()
@@ -96,6 +101,31 @@ def _set_icon(app):
         app.setWindowIcon(QIcon(p))
 
 
+def _install_error_log(window):
+    """Unexpected errors are shown in the status bar / Messages tab and written to ~/.pytps/pytps.log.
+    (The Windows program has no console, so without this an error would be invisible.)"""
+    import datetime
+    import os
+    import traceback
+    log = os.path.join(os.path.expanduser("~"), ".pytps", "pytps.log")
+
+    def hook(t, v, tb):
+        text = "".join(traceback.format_exception(t, v, tb))
+        try:
+            os.makedirs(os.path.dirname(log), exist_ok=True)
+            with open(log, "a", encoding="utf-8") as fh:
+                fh.write(f"--- {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n{text}\n")
+        except OSError:
+            pass
+        try:
+            window.state.message.emit(f"Error: {t.__name__}: {v} (details in {log})")
+        except Exception:
+            pass
+        if sys.stderr is not None:
+            sys.__excepthook__(t, v, tb)
+    sys.excepthook = hook
+
+
 def self_test(out_path):
     """Load a phantom, add two beams, calculate, optimise briefly, write a JSON report. Exit code 0 = passed."""
     import json
@@ -127,6 +157,79 @@ def self_test(out_path):
     except Exception as e:  # pragma: no cover
         import traceback
         res["error"] = repr(e); res["trace"] = traceback.format_exc()
+    with open(out_path, "w", encoding="utf-8") as fh:
+        json.dump(res, fh, indent=1)
+    return 0 if res["ok"] else 1
+
+
+def self_test_gui(out_path):
+    """Add a beam like a user (Beams tab), then resize it and move the isocentre with real mouse events in the
+    transverse, coronal and sagittal views. Uses the normal platform (a window is shown). Exit code 0 = passed."""
+    import json
+    import traceback
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+    from .gui.main_window import MainWindow
+    from .gui.theme import apply_theme
+    from . import __version__
+    errors = []
+    old_hook = sys.excepthook
+    sys.excepthook = lambda t, v, tb: errors.append("".join(traceback.format_exception(t, v, tb)))
+    res = {"version": __version__, "frozen": bool(getattr(sys, "frozen", False)), "ok": False, "views": {}}
+    try:
+        app = QApplication.instance() or QApplication(sys.argv[:1])
+        apply_theme(app)
+        res["platform"] = app.platformName()
+        w = MainWindow(); w.resize(1366, 768); w.show(); app.processEvents()
+        w.patient.load_phantom("Pelvis (prostate)")
+        w.show_planning(0); w.beams_panel.add_static(); app.processEvents()
+        st = w.state
+        b = st.plan.beams[0]
+        res["beam"] = {"name": b.name, "gantry": b.gantry, "jaws": [b.x1, b.x2, b.y1, b.y2], "iso": [float(x) for x in b.iso]}
+        st.set_cursor(b.iso.copy()); app.processEvents()
+
+        def send(v, kind, pt, buttons):
+            gp = v.mapToGlobal(pt.toPoint())
+            ev = QMouseEvent(kind, pt, QPointF(gp), Qt.LeftButton if kind != QEvent.MouseMove else Qt.NoButton,
+                             buttons, Qt.NoModifier)
+            QApplication.sendEvent(v, ev); app.processEvents()
+
+        ok_all = True
+        for name, v in zip(("Transverse", "Coronal", "Sagittal"), w.views[:3]):
+            r = {}
+            found = None
+            for yy in range(4, v.height() - 4, 2):           # find a jaw edge of the beam in this view
+                for xx in range(4, v.width() - 4, 2):
+                    h = v._field_hit(QPointF(xx, yy))
+                    if h is not None and h[0] == "jaw":
+                        found = (QPointF(xx, yy), h); break
+                if found:
+                    break
+            if found is None:
+                r["hit"] = None; ok_all = False; res["views"][name] = r; continue
+            pt, h = found
+            jaw = h[2]
+            before = getattr(b, jaw)
+            send(v, QEvent.MouseMove, pt, Qt.NoButton)
+            r["hover_cursor"] = str(v.cursor().shape())
+            send(v, QEvent.MouseButtonPress, pt, Qt.LeftButton)
+            r["drag_state"] = str(v._drag[:2]) if v._drag else None
+            for k in range(1, 6):                            # drag outwards by 30 px in 5 steps
+                q = QPointF(pt.x() + 6 * k, pt.y() + 6 * k)
+                send(v, QEvent.MouseMove, q, Qt.LeftButton)
+            send(v, QEvent.MouseButtonRelease, q, Qt.NoButton)
+            after = getattr(b, jaw)
+            r.update(hit=list(h), point=[pt.x(), pt.y()], before=before, after=after, changed=bool(abs(after - before) >= 1))
+            ok_all &= r["changed"]
+            res["views"][name] = r
+        res["errors"] = errors
+        res["ok"] = bool(ok_all and not errors)
+        w.close()
+    except Exception as e:  # pragma: no cover
+        res["error"] = repr(e); res["trace"] = traceback.format_exc(); res["errors"] = errors
+    finally:
+        sys.excepthook = old_hook
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(res, fh, indent=1)
     return 0 if res["ok"] else 1
