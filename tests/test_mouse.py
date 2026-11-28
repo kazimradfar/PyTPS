@@ -250,7 +250,11 @@ def test_all_tbi_arcs_and_junctions_visible():
         ax = v._ax()
         c = float(arcs[0].iso[ax[2]])
         for b in arcs:                                    # each arc covers a region of this plane
-            assert not ov.envelope(b, ax, c).isEmpty(), (name, b.name)
+            e = ov.envelope(b, ax, c)
+            assert not e.isEmpty(), (name, b.name, ov._body_bounds())
+            r = e.boundingRect()
+            bb = ov._body_bounds()[ax[0]]
+            assert r.left() >= bb[0] - 11 and r.right() <= bb[1] + 11, (name, b.name, r, bb)   # inside the body width
         j = ov.junction_data(ax, c)
         assert len(j) == 2, (name, j)
         for lo, hi, overlap, side, na, nb in j:

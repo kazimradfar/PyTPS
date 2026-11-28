@@ -201,9 +201,10 @@ class BeamOverlay:
             if poly is not None:
                 sub = QPainterPath(); sub.addPolygon(poly); sub.closeSubpath()
                 path = path.united(sub)
-        band = self._body_band(ax)                 # only the part inside the body width (not the far, diverged beam)
-        if band is not None:
-            path = path.intersected(band)
+        band = self._body_band(ax, path.boundingRect())   # only inside the body width (not the far, diverged beam)
+        if band is not None and not path.isEmpty():
+            clipped = path.intersected(band)
+            path = clipped if not clipped.isEmpty() else path
         if len(self._env) > 400:
             self._env.clear()
         self._env[key] = path
@@ -235,8 +236,9 @@ class BeamOverlay:
         self._bb = out
         return out
 
-    def _body_band(self, ax):
-        """Clip region: across the body (+1 cm) in the view direction that is not head-foot; unlimited along z."""
+    def _body_band(self, ax, br):
+        """Clip region: across the body (+1 cm) in the view direction that is not head-foot, over the whole length
+        of the field (br: its bounding rectangle) along z."""
         bb = self._body_bounds()
         if bb is None or 2 not in ax[:2]:
             return None
@@ -244,11 +246,10 @@ class BeamOverlay:
         lo, hi = bb[ax[1 - k]]
         lo, hi = lo - 10, hi + 10
         r = QPainterPath()
-        big = 1e5
         if k == 1:
-            r.addRect(QRectF(lo, -big, hi - lo, 2 * big))
+            r.addRect(QRectF(lo, br.top() - 10, hi - lo, br.height() + 20))
         else:
-            r.addRect(QRectF(-big, lo, 2 * big, hi - lo))
+            r.addRect(QRectF(br.left() - 10, lo, br.width() + 20, hi - lo))
         return r
 
     @staticmethod
@@ -282,9 +283,9 @@ class BeamOverlay:
             u0 = float(g["iso"][ax[1 - k]])                 # measured on the line through the isocentre
             strip = QPainterPath()
             if k == 1:
-                strip.addRect(QRectF(u0 - 2, -1e5, 4, 2e5))
+                strip.addRect(QRectF(u0 - 2, full.top() - 10, 4, full.height() + 20))
             else:
-                strip.addRect(QRectF(-1e5, u0 - 2, 2e5, 4))
+                strip.addRect(QRectF(full.left() - 10, u0 - 2, full.width() + 20, 4))
             line = g["path"].intersected(strip)
             lr = line.boundingRect() if not line.isEmpty() else full
             # z range from the isocentre line, the other direction from the whole field (for placing the label)
