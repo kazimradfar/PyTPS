@@ -209,21 +209,25 @@ class BeamOverlay:
                     p.drawLine(S(src[ax[0]], src[ax[1]]), S(end[ax[0]], end[ax[1]]))
                     lab = b.iso + fr.source * 0.2
                     p.setPen(col); p.drawText(S(lab[ax[0]], lab[ax[1]]) + QPointF(4, -4), f"{b.name}  G{cp.gantry:.0f}")
-            # gantry handles of the current beam: drag them around the isocentre to rotate the gantry
-            if cur and hasattr(view, "_gantry_handles"):
-                handles = view._gantry_handles(b)
+            # rotation handles of the current beam (gantry, arc stop, collimator, couch): drag them to rotate
+            if cur and hasattr(view, "_rot_handles"):
                 q0 = S(b.iso[ax[0]], b.iso[ax[1]])
-                for key, g, hp in handles:
+                for key, g, hp in view._rot_handles(b):
                     faint = QColor(col); faint.setAlpha(110)
                     p.setPen(QPen(faint, 1, Qt.DotLine)); p.drawLine(q0, hp)
                     p.setPen(QPen(QColor(255, 255, 255), 1.5)); p.setBrush(QBrush(col))
-                    if key == "start":
+                    if key == "gantry":
                         p.drawEllipse(hp, 6.5, 6.5)
-                    else:
+                    elif key == "stop":
                         p.drawRect(QRectF(hp.x() - 5.5, hp.y() - 5.5, 11, 11))
+                    elif key == "collimator":
+                        p.drawPolygon(QPolygonF([hp + QPointF(0, -7.5), hp + QPointF(7.5, 0), hp + QPointF(0, 7.5), hp + QPointF(-7.5, 0)]))
+                    else:
+                        p.drawPolygon(QPolygonF([hp + QPointF(0, -7.5), hp + QPointF(7, 6), hp + QPointF(-7, 6)]))
                     p.setBrush(Qt.NoBrush)
                     p.setPen(col)
-                    p.drawText(hp + QPointF(9, -7), f"G {g:.0f}°" if key == "start" else f"stop {g:.0f}°")
+                    lab = {"gantry": "G", "stop": "stop", "collimator": "Col", "couch": "Couch"}[key]
+                    p.drawText(hp + QPointF(9, -7), f"{lab} {g:.0f}°")
             # isocentre marker
             if abs(b.iso[n] - c) < 3:
                 q = S(b.iso[ax[0]], b.iso[ax[1]])

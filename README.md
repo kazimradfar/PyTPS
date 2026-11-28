@@ -125,7 +125,8 @@ command `pytps`). The Windows program contains Python and all packages, so nothi
 | Brush size | spin box in the toolbar |
 | Polygon | click points, double-click or right-click to close; Shift = subtract |
 | Resize a field / move the isocentre | drag a field edge / the red isocentre cross in a slice view |
-| Rotate the gantry | drag the round gantry handle in the transverse view (Shift: 5° steps), or turn the Gantry dial in the Beams tab |
+| Move one field | drag its isocentre cross (Ctrl: all fields with that isocentre) |
+| Rotate | drag the handles: ● gantry (transverse), ◆ collimator (view facing the beam), ▲ couch (coronal); Shift: 5° steps; or the Gantry dial and Collimator / Couch boxes in the Beams tab |
 | Undo / redo | Ctrl + Z / Ctrl + Y |
 | Calculate dose | F5 |
 | Optimise (Stage 1 + 2) | F6 |

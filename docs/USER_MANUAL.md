@@ -304,7 +304,10 @@ adds the parallel-opposed beam and **Delete** removes it. The table has one row 
 
 Below the table:
 
-- **Isocentre (cm)**: type x, y, z, or press **Crosshair** or **Target centre**; **Apply to all beams** gives every beam this isocentre.
+- **Isocentre (cm)**: type x, y, z and press **Apply**, or press **Crosshair** or **Target centre**. Only the selected
+  beam gets the new isocentre; tick **all beams** to give it to every beam of the plan. A new beam starts at the
+  isocentre of the selected beam.
+- **Gantry** dial, **Collimator** and **Couch** angles of the selected beam (mouse wheel, arrows or typing).
 - **MLC fits to** and **MLC margin** for conformal leaves.
 - **Wedge thick end**, **Arc direction** (CW / CCW), **Control point spacing** of arcs.
 - **Patient position** (HFS, FFS, HFP, FFP) and the **SSD** on the central axis.
@@ -313,16 +316,28 @@ Below the table:
 
 In the transverse, coronal and sagittal views (crosshair tool):
 
-- Point at a **field edge**: the cursor changes to ↔ or ↕. Drag to make the field wider or narrower. The jaw moves
-  in 1 mm steps; the status bar shows the jaw positions and the field size.
-- Drag the **red isocentre cross** to move the isocentre. All beams that share it move together and arcs keep their
-  MLC (like a set-up shift).
-- **Rotate the gantry:** in the transverse view the selected beam has a round **gantry handle** on its central axis
-  (labelled *G 45°*). Point at it (open hand), drag it around the isocentre and the gantry follows in 1° steps, or
-  5° steps with Shift held. An arc has a second, square handle for its stop angle. The handle appears in the
-  view in which the gantry rotates: the transverse view at couch 0°, another view when the couch is turned.
-- The **Gantry dial** in *Selected beam* (Beams tab) does the same: turn it with the mouse or the wheel, or type the
-  angle next to it. 0° is at the top of the dial.
+Any field can be grabbed, not only the selected one; grabbing a field selects it in the beam table.
+
+- **Resize:** point at a **field edge**: the cursor changes to ↔ or ↕. Drag to make the field wider or narrower.
+  The jaw moves in 1 mm steps; the status bar shows the jaw positions and the field size.
+- **Move a field:** drag its **isocentre cross**. Only that beam moves, so fields can be placed next to each other
+  (for example along the whole body for TBI). Hold **Ctrl** while dragging to move every beam that shares this
+  isocentre together (a set-up shift; arcs keep their MLC). Tip for TBI: add a field, press **Copy**, and drag the
+  copy's isocentre to its place in the coronal view; the field edges show the overlap with the next field.
+- **Rotate:** the selected beam has rotation handles in the views where a rotation turns in the view plane.
+  Point at a handle (open hand) and drag it around the isocentre: 1° steps, 5° steps with Shift held.
+
+  | Handle | Rotation | Shown in (head-first supine, couch 0°) |
+  |---|---|---|
+  | ● circle *G* | gantry | transverse view |
+  | ■ square *stop* | stop angle of an arc | transverse view |
+  | ◆ diamond *Col* | collimator (field turns about its own axis) | the view facing the beam: coronal for AP/PA fields, sagittal for lateral fields |
+  | ▲ triangle *Couch* | couch | coronal view (when the collimator handle is not there) |
+
+  A beam cannot be tilted head–foot in the sagittal view by itself; as on a real linac this needs a couch rotation
+  (couch 90°) and then a gantry rotation, whose handle then appears in the sagittal view (a non-coplanar beam).
+- The **Gantry dial** and the **Collimator** and **Couch** boxes in *Selected beam* (Beams tab) do the same.
+  0° is at the top of the dial.
 - Changing the gantry, the jaws or the isocentre removes the dose of that beam; press **Calculate** (F5) again.
 - In the **BEV**, drag the jaws or the MLC leaves (leaf editing sets the MLC to *manual*).
 
@@ -610,7 +625,8 @@ Which cost function controls the mean lung dose, and what does it cost in PTV co
 | middle drag | pan |
 | right drag | window / level (polygon tool: close the polygon) |
 | drag a field edge or the isocentre | resize the field / move the isocentre |
-| drag the round gantry handle (transverse view) | rotate the gantry (Shift: 5° steps) |
+| drag the isocentre cross / with Ctrl | move this field / all fields with this isocentre |
+| drag a rotation handle (● gantry, ◆ collimator, ▲ couch) | rotate (Shift: 5° steps) |
 | right click on DVH or profile | save image, copy image, export CSV |
 | double click on the profile | change its direction |
 

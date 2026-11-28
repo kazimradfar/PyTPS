@@ -72,8 +72,14 @@ class BeamsPanel(QWidget):
             gl.addWidget(QLabel(lab)); gl.addWidget(s)
         lay.addWidget(g)
         r2 = QHBoxLayout()
-        for t, f in (("Apply to all beams", self.apply_iso), ("Crosshair", self.iso_cursor), ("Target centre", self.iso_target)):
-            b = QPushButton(t); b.clicked.connect(f); r2.addWidget(b)
+        for t, f, tip in (("Apply", self.apply_iso, "Isocentre from the x, y, z values"),
+                          ("Crosshair", self.iso_cursor, "Isocentre at the crosshair"),
+                          ("Target centre", self.iso_target, "Isocentre at the centre of the target")):
+            b = QPushButton(t); b.setToolTip(tip); b.clicked.connect(f); r2.addWidget(b)
+        self.iso_all = QCheckBox("all beams")
+        self.iso_all.setToolTip("Unticked: only the selected beam gets the new isocentre (e.g. separate fields for TBI).\n"
+                                "Ticked: every beam of the plan.")
+        r2.addWidget(self.iso_all)
         lay.addLayout(r2)
 
         g2 = QGroupBox("Selected beam")
@@ -89,6 +95,15 @@ class BeamsPanel(QWidget):
         self.gspin.valueChanged.connect(lambda v: self._gantry(v, final=True))
         gl2.addWidget(self.gdial); gl2.addWidget(self.gspin); gl2.addStretch(1)
         f2.addRow("Gantry", gw)
+        cw = QWidget(); cl = QHBoxLayout(cw); cl.setContentsMargins(0, 0, 0, 0)
+        self.cspin = _dspin(0, 359, 0, 0, 1, " °"); self.cspin.setWrapping(True)
+        self.kspin = _dspin(0, 359, 0, 0, 1, " °"); self.kspin.setWrapping(True)
+        self.cspin.setToolTip("Collimator angle (mouse wheel, arrows, or the diamond handle in the view that faces the beam)")
+        self.kspin.setToolTip("Couch angle (mouse wheel, arrows, or the triangle handle in the coronal view)")
+        self.cspin.valueChanged.connect(lambda v: self._angle("collimator", v))
+        self.kspin.valueChanged.connect(lambda v: self._angle("couch", v))
+        cl.addWidget(QLabel("Collimator")); cl.addWidget(self.cspin); cl.addWidget(QLabel("Couch")); cl.addWidget(self.kspin); cl.addStretch(1)
+        f2.addRow("", cw)
         self.mlc_target = QComboBox(); self.mlc_margin = _dspin(-20, 50, 1, 5, 0.5, " mm")
         self.mlc_target.currentTextChanged.connect(lambda t: self._set("mlc_target", t)); self.mlc_margin.valueChanged.connect(lambda v: self._set("mlc_margin", v))
         f2.addRow("MLC fits to", self.mlc_target); f2.addRow("MLC margin", self.mlc_margin)
@@ -117,10 +132,22 @@ class BeamsPanel(QWidget):
         elif what == "beam":
             self._sync_gantry(self.cur())
 
+    def _angle(self, attr, v):
+        if self._filling:
+            return
+        b = self.cur()
+        if b is None:
+            return
+        setattr(b, attr, float(v) % 360); b.cps = []
+        if self.state.plan is not None:
+            self.state.plan.beam_dose.pop(b.name, None)
+        self.state.changed.emit("plan")
+
     def _sync_gantry(self, b):
         if b is None:
             return
-        for w, v in ((self.gdial, int(round(b.gantry + 180)) % 360), (self.gspin, round(b.gantry) % 360)):
+        for w, v in ((self.gdial, int(round(b.gantry + 180)) % 360), (self.gspin, round(b.gantry) % 360),
+                     (self.cspin, round(b.collimator) % 360), (self.kspin, round(b.couch) % 360)):
             if w.value() != v:
                 w.blockSignals(True); w.setValue(v); w.blockSignals(False)
 
@@ -283,8 +310,10 @@ class BeamsPanel(QWidget):
 
     # ------------------------------------------------------------------ actions
     def _iso_default(self):
+        """A new beam starts at the isocentre of the selected beam (then drag its isocentre to move it)."""
         p = self.plan()
-        return p.beams[0].iso.copy() if p.beams else target_centre(self.state)
+        cur = self.cur()
+        return (cur or p.beams[0]).iso.copy() if p.beams else target_centre(self.state)
 
     def _add(self, b):
         p = self.plan()
@@ -331,10 +360,16 @@ class BeamsPanel(QWidget):
             normalise(p, self.state.engine)
         self.state.changed.emit("dose")
 
-    def _set_iso(self, pos):
-        for b in self.plan().beams:
+    def _set_iso(self, pos, all_beams=None):
+        """New isocentre for the selected beam, or for every beam ("all beams" ticked, or all_beams=True)."""
+        p = self.plan()
+        if all_beams is None:
+            all_beams = self.iso_all.isChecked()
+        cur = self.cur()
+        beams = p.beams if (all_beams or cur is None) else [cur]
+        for b in beams:
             b.iso = np.array(pos, float); b.cps = []
-        self.plan().beam_dose.clear()
+            p.beam_dose.pop(b.name, None)
         self.state.changed.emit("plan")
 
     def apply_iso(self):
@@ -343,8 +378,8 @@ class BeamsPanel(QWidget):
     def iso_cursor(self):
         self._set_iso(self.state.cursor)
 
-    def iso_target(self):
-        self._set_iso(target_centre(self.state))
+    def iso_target(self, all_beams=None):
+        self._set_iso(target_centre(self.state), all_beams)
 
 
 class PrescriptionPanel(QWidget):

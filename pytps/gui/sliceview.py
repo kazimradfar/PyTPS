@@ -27,6 +27,7 @@ class SliceView(QWidget):
         self._contour_cache = {}
         self._drag = None
         self._shift = False
+        self._ctrl = False
         self._poly: list = []
         self._ruler = None
         self._mouse = None
@@ -247,8 +248,11 @@ class SliceView(QWidget):
             hit = self._field_hit(pos)
             if hit is not None:
                 self._shift = bool(ev.modifiers() & Qt.ShiftModifier)
-                if hit[0] == "gantry":
+                self._ctrl = bool(ev.modifiers() & Qt.ControlModifier)
+                if hit[0] == "rot":
                     self.setCursor(Qt.ClosedHandCursor)
+                if hit[1] != self.state.cur_beam:        # grabbing another field selects it
+                    self.state.cur_beam = hit[1]; self.state.changed.emit("plan")
                 self._drag = ("field",) + hit; return
             self._drag = ("cursor",); self.state.set_cursor(self.world_point(pos.x(), pos.y()))
 
@@ -262,65 +266,122 @@ class SliceView(QWidget):
         cp = cps[min(st.cp_index, len(cps) - 1)] if b.kind == "ARC" else cps[0]
         return b, cp
 
-    def _gantry_dirs(self, b):
-        """Unit screen directions of the source for gantry 0 and 90 (couch and collimator of the beam), the
-        isocentre on screen, and whether the gantry rotates in the plane of this view."""
-        from ..core.beams import ControlPoint, Frame
+    def _beam_cp(self, b):
+        cps = b.control_points()
+        return cps[min(self.state.cp_index, len(cps) - 1)] if b.kind == "ARC" else cps[0]
+
+    def _beams_for_hit(self):
+        """The selected beam first, then the other visible beams: any field can be grabbed with the mouse."""
+        st = self.state
+        if st.plan is None or not st.plan.beams or not getattr(self, "edit_fields", True):
+            return []
+        cur = st.plan.beam(st.cur_beam) or st.plan.beams[0]
+        return [cur] + [q for q in st.plan.beams if q is not cur and getattr(q, "visible", True)]
+
+    ROT_LABEL = {"gantry": "G", "stop": "stop", "collimator": "Col", "couch": "Couch"}
+
+    def _rot_dirs(self, b, kind):
+        """For a machine rotation (gantry, collimator or couch) of beam b: the isocentre on screen, the screen
+        directions of the rotating reference vector at 0 and 90 degrees, and whether this rotation turns in the plane
+        of this view. Reference vectors: gantry -> source direction, collimator -> field Y axis,
+        couch -> direction of the gantry axis (all perpendicular to their rotation axis)."""
+        from ..core.beams import ORIENT, ControlPoint, Frame, _rz
         a = self._ax()
         _, S, _ = self.mapping()
         q0 = S(b.iso[a[0]], b.iso[a[1]])
-        dirs, src = [], []
-        for g in (0.0, 90.0):
-            fr = Frame(ControlPoint(g, b.collimator, b.couch, b.x1, b.x2, b.y1, b.y2), b.iso, b.orientation)
-            src.append(fr.source / np.linalg.norm(fr.source))
-            p1 = S(b.iso[a[0]] + 100 * src[-1][a[0]], b.iso[a[1]] + 100 * src[-1][a[1]])
+        dirs = []
+        for ang in (0.0, 90.0):
+            g, c, k = b.gantry, b.collimator, b.couch
+            if kind == "gantry":
+                g = ang
+            elif kind == "collimator":
+                c = ang
+            else:
+                k = ang
+            fr = Frame(ControlPoint(g, c, k, b.x1, b.x2, b.y1, b.y2), b.iso, b.orientation)
+            if kind == "gantry":
+                vec = fr.source / np.linalg.norm(fr.source)
+            elif kind == "collimator":
+                vec = fr.Y / np.linalg.norm(fr.Y)
+            else:
+                vec = (_rz(k) @ ORIENT.get(b.orientation, ORIENT["HFS"])).T @ np.array([0.0, 1.0, 0.0])
+            p1 = S(b.iso[a[0]] + 100 * vec[a[0]], b.iso[a[1]] + 100 * vec[a[1]])
             d = np.array([p1.x() - q0.x(), p1.y() - q0.y()])
-            dirs.append(d / (np.linalg.norm(d) + 1e-9))
-        rot_axis = np.cross(src[0], src[1])
-        in_plane = abs(rot_axis[a[2]]) > 0.9 and abs(b.iso[a[2]] - self.state.cursor[a[2]]) < 40
+            n = np.linalg.norm(d)
+            dirs.append(d / n if n > 1e-6 else d)
+            if ang == 0.0:
+                v0 = vec
+            else:
+                axis = np.cross(v0, vec)
+        in_plane = abs(axis[a[2]]) > 0.9 and abs(b.iso[a[2]] - self.state.cursor[a[2]]) < 40
         return q0, dirs[0], dirs[1], in_plane
 
-    def _gantry_handles(self, b):
-        """Round handles on the central axis of the current beam (start, and stop for arcs) in the view where the
-        gantry rotates (the transverse view for a couch angle of 0). Drag them to rotate the gantry."""
+    def _rot_handles(self, b):
+        """Rotation handles of beam b in this view: the gantry (and arc stop) where the gantry turns in the view plane,
+        the collimator in the view that faces the beam, otherwise the couch where it turns in the view plane.
+        Returns [(key, angle, screen point)]."""
         if b is None or self.state.image is None:
             return []
-        q0, d0, d90, in_plane = self._gantry_dirs(b)
-        if not in_plane:
-            return []
+        s, _, _ = self.mapping()
         R = float(np.clip(0.36 * min(self.width(), self.height()), 40, 170))
         out = []
-        for key, g in (("start", b.gantry),) + ((("stop", b.arc_stop),) if b.kind == "ARC" else ()):
-            t = np.radians(g)
-            d = np.cos(t) * d0 + np.sin(t) * d90
-            out.append((key, g, QPointF(q0.x() + R * d[0], q0.y() + R * d[1])))
+        shown = set()
+        for kind in ("gantry", "collimator", "couch"):
+            if kind == "couch" and "collimator" in shown:
+                continue                                  # same rotation on screen: keep the collimator
+            q0, d0, d90, in_plane = self._rot_dirs(b, kind)
+            if not in_plane:
+                continue
+            shown.add(kind)
+            if kind == "gantry":
+                items = [("gantry", b.gantry)] + ([("stop", b.arc_stop)] if b.kind == "ARC" else [])
+                r = R
+            elif kind == "collimator":
+                items = [("collimator", b.collimator)]
+                r = max(0.6 * R, max(abs(b.y1), abs(b.y2), abs(b.x1), abs(b.x2)) * s + 28)
+            else:
+                items = [("couch", b.couch)]
+                r = 0.8 * R
+            for key, ang in items:
+                t = np.radians(ang)
+                d = np.cos(t) * d0 + np.sin(t) * d90
+                out.append((key, ang, QPointF(q0.x() + r * d[0], q0.y() + r * d[1])))
         return out
 
+    def _gantry_handles(self, b):          # kept for compatibility: gantry handles only
+        return [h for h in self._rot_handles(b) if h[0] in ("gantry", "stop")]
+
     def _field_hit(self, pos):
-        """Which handle of the current beam is under the mouse: the isocentre or a jaw edge (in this slice)."""
+        """What is under the mouse: an isocentre cross (any beam), a rotation handle (selected beam) or a jaw edge
+        (any beam; the selected beam first)."""
         from ..core.beams import SAD, Frame
-        b, cp = self._cur_beam()
-        if b is None:
+        beams = self._beams_for_hit()
+        if not beams:
             return None
         s, S, _ = self.mapping()
         a = self._ax()
-        q = S(b.iso[a[0]], b.iso[a[1]])
-        if abs(b.iso[a[2]] - self.state.cursor[a[2]]) < 5 and (q - pos).manhattanLength() < 10:
-            return ("iso", b.name)
-        for key, _g, hp in self._gantry_handles(b):
-            if (hp - pos).manhattanLength() < 12:
-                return ("gantry", b.name, key)
-        fr = Frame(cp, b.iso, b.orientation)
-        u, v, d = fr.project(self.world_point(pos.x(), pos.y())[None])
-        if d[0] <= 1:
-            return None
-        tol = 7 / s * SAD / d[0]
-        cand = [("x1", abs(u[0] - b.x1), b.y1 - tol <= v[0] <= b.y2 + tol), ("x2", abs(u[0] - b.x2), b.y1 - tol <= v[0] <= b.y2 + tol),
-                ("y1", abs(v[0] - b.y1), b.x1 - tol <= u[0] <= b.x2 + tol), ("y2", abs(v[0] - b.y2), b.x1 - tol <= u[0] <= b.x2 + tol)]
-        cand = [c for c in cand if c[2] and c[1] < tol]
-        if not cand:
-            return None
-        return ("jaw", b.name, min(cand, key=lambda c: c[1])[0])
+        for b in beams:
+            q = S(b.iso[a[0]], b.iso[a[1]])
+            if abs(b.iso[a[2]] - self.state.cursor[a[2]]) < 5 and (q - pos).manhattanLength() < 10:
+                return ("iso", b.name)
+        near = [((hp - pos).manhattanLength(), key) for key, _g, hp in self._rot_handles(beams[0])]
+        near = [n for n in near if n[0] < 12]
+        if near:                                         # the nearest handle (arc start and stop can be close)
+            return ("rot", beams[0].name, min(near)[1])
+        wp = self.world_point(pos.x(), pos.y())[None]
+        for b in beams:
+            cp = self._beam_cp(b)
+            fr = Frame(cp, b.iso, b.orientation)
+            u, v, d = fr.project(wp)
+            if d[0] <= 1:
+                continue
+            tol = 7 / s * SAD / d[0]
+            cand = [("x1", abs(u[0] - b.x1), b.y1 - tol <= v[0] <= b.y2 + tol), ("x2", abs(u[0] - b.x2), b.y1 - tol <= v[0] <= b.y2 + tol),
+                    ("y1", abs(v[0] - b.y1), b.x1 - tol <= u[0] <= b.x2 + tol), ("y2", abs(v[0] - b.y2), b.x1 - tol <= u[0] <= b.x2 + tol)]
+            cand = [c for c in cand if c[2] and c[1] < tol]
+            if cand:
+                return ("jaw", b.name, min(cand, key=lambda c: c[1])[0])
+        return None
 
     def _drag_field(self, d, pos):
         from ..core.beams import Frame
@@ -328,30 +389,33 @@ class SliceView(QWidget):
         b = st.plan.beam(d[2]) if st.plan else None
         if b is None:
             return
-        if d[1] == "gantry":
-            q0, d0, d90, _ = self._gantry_dirs(b)
+        if d[1] == "rot":
+            key = d[3]
+            kind = "gantry" if key == "stop" else key
+            q0, d0, d90, _ = self._rot_dirs(b, kind)
             m = np.array([pos.x() - q0.x(), pos.y() - q0.y()])
             if np.linalg.norm(m) < 5:
                 return
             g = float(np.degrees(np.arctan2(m @ d90, m @ d0))) % 360
             step = 5.0 if self._shift else 1.0
             g = float(np.round(g / step) * step) % 360
-            setattr(b, "gantry" if d[3] == "start" else "arc_stop", g)
+            setattr(b, {"gantry": "gantry", "stop": "arc_stop", "collimator": "collimator", "couch": "couch"}[key], g)
             b.cps = []
             st.plan.beam_dose.pop(b.name, None)
             st.message.emit(f"{b.name}: gantry {b.gantry:.0f}°" + (f" → {b.arc_stop:.0f}° ({b.arc_dir})" if b.kind == "ARC" else "")
-                            + "   (Shift: 5° steps)")
+                            + f", collimator {b.collimator:.0f}°, couch {b.couch:.0f}°   (Shift: 5° steps)")
             st.changed.emit("beam")
             return
         if d[1] == "iso":
             old = b.iso.copy()
             new = self.world_point(pos.x(), pos.y()); a = self._ax(); new[a[2]] = old[a[2]]
             new = np.round(new, 0)
-            for q in st.plan.beams:                      # every beam that shares this isocentre moves with it
-                if np.allclose(q.iso, old):
-                    q.iso = new.copy(); st.plan.beam_dose.pop(q.name, None)      # MLC sequence kept: a set-up shift
+            group = [q for q in st.plan.beams if np.allclose(q.iso, old)] if self._ctrl else [b]
+            for q in group:                              # this beam; with Ctrl every beam that shares the isocentre
+                q.iso = new.copy(); st.plan.beam_dose.pop(q.name, None)          # MLC sequence kept: a set-up shift
             self._iso_moved = True
-            st.message.emit(f"Isocentre x {new[0] / 10:.1f}  y {new[1] / 10:.1f}  z {new[2] / 10:.1f} cm")
+            st.message.emit(f"Isocentre of {', '.join(q.name for q in group)}: x {new[0] / 10:.1f}  y {new[1] / 10:.1f}  "
+                            f"z {new[2] / 10:.1f} cm   (Ctrl: move all beams with this isocentre)")
             for v in (st.views if hasattr(st, "views") else []):
                 v.update()
             self.update(); return
@@ -393,10 +457,10 @@ class SliceView(QWidget):
                 if hit is not None:
                     if hit[0] == "iso":
                         shape = Qt.SizeAllCursor
-                    elif hit[0] == "gantry":
+                    elif hit[0] == "rot":
                         shape = Qt.OpenHandCursor
                     else:
-                        b, cp = self._cur_beam()
+                        b = st.plan.beam(hit[1]); cp = self._beam_cp(b)
                         from ..core.beams import Frame
                         fr = Frame(cp, b.iso, b.orientation)
                         ax = fr.X if hit[2][0] == "x" else fr.Y      # direction the edge moves, seen in this view
@@ -424,7 +488,7 @@ class SliceView(QWidget):
         if self._drag and self._drag[0] == "brush":
             self.state.end_edit()
         if self._drag and self._drag[0] == "field":
-            if self._drag[1] == "gantry":
+            if self._drag[1] == "rot":
                 self.setCursor(Qt.OpenHandCursor)
             self.state.changed.emit("plan")
         self._drag = None

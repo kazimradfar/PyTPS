@@ -246,7 +246,7 @@ class MainWindow(QMainWindow):
         self.a_calc = self._act("Calculate dose", self.calculate, icons.calc(), "F5", "Calculate the dose of the plan")
         m.addAction(self.a_beam); m.addAction(self._act("Add arc", lambda: (self.show_planning(0), self.beams_panel.add_arc())))
         m.addAction(self._act("Add opposed beam", lambda: (self.show_planning(0), self.beams_panel.opposed())))
-        m.addAction(self._act("Isocentre to target centre", lambda: (self.show_planning(0), self.beams_panel.iso_target())))
+        m.addAction(self._act("Isocentre to target centre", lambda: (self.show_planning(0), self.beams_panel.iso_target(all_beams=True))))
         m.addAction(self._act("Prescription…", lambda: self.show_planning(1)))
         m.addAction(self._act("IMRT constraints…", lambda: self.show_planning(2)))
         m.addSeparator(); m.addAction(self.a_calc)

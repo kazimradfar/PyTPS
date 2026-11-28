@@ -9,12 +9,12 @@ def _app():
     return QApplication.instance() or QApplication([])
 
 
-def _send(app, v, kind, pt, button, buttons):
+def _send(app, v, kind, pt, button, buttons, mods=None):
     from PySide6.QtCore import QPointF, Qt
     from PySide6.QtGui import QMouseEvent
     from PySide6.QtWidgets import QApplication
     gp = v.mapToGlobal(pt.toPoint())
-    QApplication.sendEvent(v, QMouseEvent(kind, pt, QPointF(gp), button, buttons, Qt.NoModifier))
+    QApplication.sendEvent(v, QMouseEvent(kind, pt, QPointF(gp), button, buttons, Qt.NoModifier if mods is None else mods))
     app.processEvents()
 
 
@@ -114,9 +114,32 @@ def test_drag_every_jaw_real_mouse(layout):
     w.close()
 
 
-def test_rotate_gantry_with_mouse():
+def _rotate(app, v, b, key, target):
+    """Drag the rotation handle `key` of beam b in view v to the angle `target` with real mouse events."""
     import numpy as np
     from PySide6.QtCore import QEvent, QPointF, Qt
+    kind = "gantry" if key == "stop" else key
+    h = {k: hp for k, _a, hp in v._rot_handles(b)}
+    assert key in h, (key, list(h))
+    hp = h[key]
+    q0, d0, d90, ok = v._rot_dirs(b, kind)
+    R = np.hypot(hp.x() - q0.x(), hp.y() - q0.y())
+    t = np.radians(target); d = np.cos(t) * d0 + np.sin(t) * d90
+    end = QPointF(q0.x() + R * d[0], q0.y() + R * d[1])
+    _send(app, v, QEvent.MouseMove, hp, Qt.NoButton, Qt.NoButton)
+    _send(app, v, QEvent.MouseButtonPress, hp, Qt.LeftButton, Qt.LeftButton)
+    assert v._drag is not None and v._drag[1] == "rot"
+    for k in range(1, 9):
+        f = k / 8
+        mid = QPointF((1 - f) * hp.x() + f * end.x(), (1 - f) * hp.y() + f * end.y())
+        _send(app, v, QEvent.MouseMove, mid, Qt.NoButton, Qt.LeftButton)
+    _send(app, v, QEvent.MouseButtonRelease, end, Qt.LeftButton, Qt.NoButton)
+    attr = {"gantry": "gantry", "stop": "arc_stop", "collimator": "collimator", "couch": "couch"}[key]
+    got = getattr(b, attr)
+    assert abs(((got - target) + 180) % 360 - 180) <= 1.0, (key, target, got)
+
+
+def test_rotate_in_three_views():
     from pytps.gui.main_window import MainWindow
     app = _app()
     w = MainWindow(); w.resize(1500, 900); w.show(); app.processEvents()
@@ -125,32 +148,83 @@ def test_rotate_gantry_with_mouse():
     w.beams_panel.add_static()
     st = w.state; b = st.plan.beams[0]
     st.set_cursor(b.iso.copy()); app.processEvents()
-    tv, cor = w.views[0], w.views[1]
-    assert cor._gantry_handles(b) == []                 # couch 0: the gantry turns in the transverse plane only
-    hs = tv._gantry_handles(b)
-    assert len(hs) == 1 and hs[0][0] == "start"
-    hp = hs[0][2]
-    assert tv._field_hit(hp)[0] == "gantry"
-    q0, d0, d90, ok = tv._gantry_dirs(b)
-    for target in (45.0, 270.0, 123.0):
-        hp = tv._gantry_handles(b)[0][2]
-        R = np.hypot(hp.x() - q0.x(), hp.y() - q0.y())
-        t = np.radians(target); d = np.cos(t) * d0 + np.sin(t) * d90
-        end = QPointF(q0.x() + R * d[0], q0.y() + R * d[1])
-        _send(app, tv, QEvent.MouseMove, hp, Qt.NoButton, Qt.NoButton)
-        _send(app, tv, QEvent.MouseButtonPress, hp, Qt.LeftButton, Qt.LeftButton)
-        for k in range(1, 9):                            # along the circle
-            f = k / 8
-            mid = (1 - f) * np.array([hp.x(), hp.y()]) + f * np.array([end.x(), end.y()])
-            _send(app, tv, QEvent.MouseMove, QPointF(*mid) if k < 8 else end, Qt.NoButton, Qt.LeftButton)
-        _send(app, tv, QEvent.MouseButtonRelease, end, Qt.LeftButton, Qt.NoButton)
-        assert abs(((b.gantry - target) + 180) % 360 - 180) <= 1.0, (target, b.gantry)
-        assert w.beams_panel.gspin.value() == round(target) % 360
-    # arc: start and stop handles
+    tv, cor, sag = w.views[:3]
+    keys = lambda v: [h[0] for h in v._rot_handles(b)]
+    # gantry 0 (AP field): gantry turns in the transverse view, the collimator in the coronal view (facing the beam)
+    assert keys(tv) == ["gantry"] and keys(cor) == ["collimator"] and keys(sag) == []
+    for target in (45.0, 270.0, 90.0):
+        _rotate(app, tv, b, "gantry", target)
+    assert w.beams_panel.gspin.value() == 90
+    # gantry 90 (lateral field): collimator in the sagittal view, couch in the coronal view
+    assert keys(sag) == ["collimator"] and keys(cor) == ["couch"]
+    _rotate(app, sag, b, "collimator", 30.0)
+    _rotate(app, cor, b, "couch", 20.0)
+    assert w.beams_panel.cspin.value() == 30 and w.beams_panel.kspin.value() == 20
+    # an arc has a stop handle; the dial and the spin boxes turn the selected beam
     w.beams_panel.add_arc(); a = st.plan.beam(st.cur_beam); app.processEvents()
-    keys = [h[0] for h in tv._gantry_handles(a)]
-    assert keys == ["start", "stop"]
-    # the dial in the Beams tab turns the gantry of the selected beam
+    assert [h[0] for h in tv._rot_handles(a)] == ["gantry", "stop"]
+    _rotate(app, tv, a, "stop", 200.0)
     w.beams_panel.gdial.setValue((30 + 180) % 360); app.processEvents()
     assert abs(a.gantry - 30) < 0.5
+    w.beams_panel.cspin.setValue(15); w.beams_panel.kspin.setValue(350); app.processEvents()
+    assert a.collimator == 15 and a.couch == 350
+    w.close()
+
+
+def test_move_fields_separately_for_tbi():
+    import numpy as np
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from pytps.gui.main_window import MainWindow
+    app = _app()
+    w = MainWindow(); w.resize(1500, 900); w.show(); app.processEvents()
+    w.patient.load_phantom("Pelvis (prostate)")
+    w.show_planning(0)
+    bp = w.beams_panel
+    bp.add_static(); bp.add_static(); bp.add_static()       # B1, B2, B3 at the same isocentre
+    st = w.state; p = st.plan
+    b1, b2, b3 = p.beams
+    iso0 = b1.iso.copy()
+    assert np.allclose(b2.iso, iso0) and np.allclose(b3.iso, iso0)
+    st.set_cursor(iso0.copy()); app.processEvents()
+    cor = w.views[1]
+    a = cor._ax(); _, S, _ = cor.mapping()
+
+    def drag_iso(beam_now_at, dy, mods=None):
+        q = S(beam_now_at[a[0]], beam_now_at[a[1]])
+        _send(app, cor, QEvent.MouseMove, q, Qt.NoButton, Qt.NoButton)
+        _send(app, cor, QEvent.MouseButtonPress, q, Qt.LeftButton, Qt.LeftButton, mods)
+        assert cor._drag is not None and cor._drag[1] == "iso"
+        for k in range(1, 6):
+            _send(app, cor, QEvent.MouseMove, QPointF(q.x(), q.y() + dy * k / 5), Qt.NoButton, Qt.LeftButton, mods)
+        _send(app, cor, QEvent.MouseButtonRelease, QPointF(q.x(), q.y() + dy), Qt.LeftButton, Qt.NoButton, mods)
+
+    # the selected beam (B3) moves alone: the other fields stay
+    drag_iso(iso0, 80)
+    assert not np.allclose(b3.iso, iso0) and np.allclose(b1.iso, iso0) and np.allclose(b2.iso, iso0)
+    assert abs(b3.iso[2] - iso0[2]) > 20 and abs(b3.iso[0] - iso0[0]) < 2
+    # grabbing B1/B2's isocentre selects that beam; with Ctrl both beams that share it move together
+    st.cur_beam = "B1"; app.processEvents()
+    drag_iso(iso0, -80, Qt.ControlModifier)
+    assert np.allclose(b1.iso, b2.iso) and not np.allclose(b1.iso, iso0)
+    assert st.cur_beam == "B1"
+    # a field edge of a beam that is not selected can be grabbed too (and selects it)
+    st.cur_beam = "B3"; app.processEvents()
+    h = None
+    for yy in range(4, cor.height() - 4, 4):
+        for xx in range(4, cor.width() - 4, 4):
+            r = cor._field_hit(QPointF(xx, yy))
+            if r is not None and r[0] == "jaw" and r[1] == "B1":
+                h = QPointF(xx, yy); break
+        if h is not None:
+            break
+    assert h is not None
+    _send(app, cor, QEvent.MouseButtonPress, h, Qt.LeftButton, Qt.LeftButton)
+    _send(app, cor, QEvent.MouseButtonRelease, h, Qt.LeftButton, Qt.NoButton)
+    assert st.cur_beam == "B1"
+    # isocentre buttons: only the selected beam unless "all beams" is ticked
+    st.cur_beam = "B2"; bp.refresh()
+    st.set_cursor(iso0 + np.array([0, 0, -200.0])); bp.iso_all.setChecked(False); bp.iso_cursor()
+    assert np.allclose(b2.iso, iso0 + np.array([0, 0, -200.0])) and not np.allclose(b1.iso, b2.iso)
+    bp.iso_all.setChecked(True); bp.iso_cursor()
+    assert all(np.allclose(q.iso, b2.iso) for q in p.beams)
     w.close()
