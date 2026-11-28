@@ -304,8 +304,8 @@ adds the parallel-opposed beam and **Delete** removes it. The table has one row 
 
 Below the table:
 
-- **Isocentre (cm)**: type x, y, z and press **Apply**, or press **Crosshair** or **Target centre**. Only the selected
-  beam gets the new isocentre; tick **Apply to all beams** to give it to every beam of the plan. A new beam starts at the
+- **Isocentre (cm)**: type x, y, z and press **Apply**, or press **Crosshair** or **Target** (centre of the target).
+  Only the selected beam gets the new isocentre; tick **All beams** to give it to every beam of the plan. A new beam starts at the
   isocentre of the selected beam.
 - **Gantry** dial, **Collimator** and **Couch** angles of the selected beam (mouse wheel, arrows or typing).
 - **MLC fits to** and **MLC margin** for conformal leaves.

@@ -74,10 +74,10 @@ class BeamsPanel(QWidget):
         r2 = QHBoxLayout()
         for t, f, tip in (("Apply", self.apply_iso, "Isocentre from the x, y, z values"),
                           ("Crosshair", self.iso_cursor, "Isocentre at the crosshair"),
-                          ("Target centre", self.iso_target, "Isocentre at the centre of the target")):
+                          ("Target", self.iso_target, "Isocentre at the centre of the target")):
             b = QPushButton(t); b.setToolTip(tip); b.clicked.connect(f); r2.addWidget(b)
         lay.addLayout(r2)
-        self.iso_all = QCheckBox("Apply to all beams (unticked: only the selected beam)")
+        self.iso_all = QCheckBox("All beams")
         self.iso_all.setToolTip("Unticked: only the selected beam gets the new isocentre (e.g. separate fields for TBI).\n"
                                 "Ticked: every beam of the plan.")
         lay.addWidget(self.iso_all)
