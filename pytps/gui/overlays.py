@@ -187,6 +187,7 @@ class BeamOverlay:
         as a QPainterPath in view coordinates (mm). Cached."""
         key = (b.name, b.kind, b.gantry, b.arc_stop, b.arc_dir, b.cp_spacing, b.collimator, b.couch, b.x1, b.x2, b.y1, b.y2,
                tuple(np.round(b.iso, 1)), b.orientation, len(b.cps), ax[2], round(c, 1))
+        key = key + (self._body_key(),)
         if key in self._env:
             return self._env[key]
         cps = b.control_points()
@@ -200,10 +201,55 @@ class BeamOverlay:
             if poly is not None:
                 sub = QPainterPath(); sub.addPolygon(poly); sub.closeSubpath()
                 path = path.united(sub)
+        band = self._body_band(ax)                 # only the part inside the body width (not the far, diverged beam)
+        if band is not None:
+            path = path.intersected(band)
         if len(self._env) > 400:
             self._env.clear()
         self._env[key] = path
         return path
+
+    def _body_key(self):
+        st = self.state
+        ss = st.ss
+        return (id(ss), getattr(ss, "version", 0)) if ss is not None else None
+
+    def _body_bounds(self):
+        """(min, max) patient coordinates of the body outline along x, y, z (None without an EXTERNAL structure)."""
+        st = self.state
+        key = self._body_key()
+        if getattr(self, "_bb_key", None) == key:
+            return self._bb
+        self._bb_key, self._bb = key, None
+        ext = st.ss.external() if st.ss is not None else None
+        img = st.image
+        if ext is None or img is None or ext.mask is None or not ext.mask.any():
+            return None
+        m = ext.mask
+        out = []
+        for i, a in enumerate("xyz"):
+            other = tuple(k for k in range(3) if k != 2 - i)      # mask axes are (z, y, x)
+            idx = np.nonzero(m.any(axis=other))[0]
+            ac = img.axis(a)
+            out.append((float(ac[idx[0]]), float(ac[idx[-1]])))
+        self._bb = out
+        return out
+
+    def _body_band(self, ax):
+        """Clip region: across the body (+1 cm) in the view direction that is not head-foot; unlimited along z."""
+        bb = self._body_bounds()
+        if bb is None or 2 not in ax[:2]:
+            return None
+        k = ax[:2].index(2)
+        lo, hi = bb[ax[1 - k]]
+        lo, hi = lo - 10, hi + 10
+        r = QPainterPath()
+        big = 1e5
+        if k == 1:
+            r.addRect(QRectF(lo, -big, hi - lo, 2 * big))
+        else:
+            r.addRect(QRectF(-big, lo, 2 * big, hi - lo))
+        return r
 
     @staticmethod
     def _transform(S):
@@ -226,13 +272,23 @@ class BeamOverlay:
             if env.isEmpty():
                 continue
             key = tuple(np.round(b.iso, 0))
-            g = groups.setdefault(key, {"path": QPainterPath(), "names": []})
+            g = groups.setdefault(key, {"path": QPainterPath(), "names": [], "iso": b.iso})
             g["path"] = g["path"].united(env); g["names"].append(b.name)
         if len(groups) < 2:
             return []
         boxes = []
         for g in groups.values():
-            r = g["path"].boundingRect()
+            full = g["path"].boundingRect()
+            u0 = float(g["iso"][ax[1 - k]])                 # measured on the line through the isocentre
+            strip = QPainterPath()
+            if k == 1:
+                strip.addRect(QRectF(u0 - 2, -1e5, 4, 2e5))
+            else:
+                strip.addRect(QRectF(-1e5, u0 - 2, 2e5, 4))
+            line = g["path"].intersected(strip)
+            lr = line.boundingRect() if not line.isEmpty() else full
+            # z range from the isocentre line, the other direction from the whole field (for placing the label)
+            r = QRectF(full.left(), lr.top(), full.width(), lr.height()) if k == 1 else QRectF(lr.left(), full.top(), lr.width(), full.height())
             lo, hi = (r.left(), r.right()) if k == 0 else (r.top(), r.bottom())
             olo, ohi = (r.top(), r.bottom()) if k == 0 else (r.left(), r.right())
             boxes.append((lo, hi, olo, ohi, g["names"]))
@@ -281,7 +337,7 @@ class BeamOverlay:
             cur = b.name == st.cur_beam
             cps = b.control_points()
             show = cps if b.kind != "ARC" else [cps[min(st.cp_index, len(cps) - 1)]] if cur else []
-            if b.kind == "ARC":           # whole region covered during the rotation, so every arc and its junctions show
+            if b.kind == "ARC" and 2 in ax[:2]:   # coronal/sagittal: whole region covered during the rotation
                 env = self.envelope(b, ax, c)
                 if not env.isEmpty():
                     fill = QColor(col); fill.setAlpha(34 if cur else 24)
