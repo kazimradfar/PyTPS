@@ -303,6 +303,12 @@ class BeamOverlay:
             out.append((lo, hi, hi - lo, max(a_[2], b_[2]) + 8, a_[3], b_[3]))
         return out
 
+    @staticmethod
+    def _transform(S):
+        """QTransform from view coordinates (mm) to screen pixels (the mapping S of the view is linear)."""
+        p00, p10, p01 = S(0.0, 0.0), S(1.0, 0.0), S(0.0, 1.0)
+        return QTransform(p10.x() - p00.x(), p10.y() - p00.y(), p01.x() - p00.x(), p01.y() - p00.y(), p00.x(), p00.y())
+
     def _junctions(self, p, view, S, ax, c, tf):
         data = self.junction_data(ax, c)
         if not data:
