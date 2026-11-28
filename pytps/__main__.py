@@ -18,6 +18,7 @@ def main(argv=None):
     ap.add_argument("--optimise", type=int, default=0, help="with --demo-plan: optimise the beams (Stage 1 iterations)")
     ap.add_argument("--arc", action="store_true", help="with --demo-plan: use one arc instead of static fields")
     ap.add_argument("--guide-tbi", action="store_true", help="open the VMAT-TBI guided exercise and do all steps (demo)")
+    ap.add_argument("--guide-steps", type=int, default=7, help="with --guide-tbi: number of steps to do (3 = up to the arcs)")
     ap.add_argument("--beam-tab", default="", help="BEV, 3D or Room")
     ap.add_argument("--main-view", default="", help="main view: Transverse, Coronal, Sagittal, BEV, 3D or Room")
     ap.add_argument("--export", default="", help="with --demo-plan: write DVH/profile images and CSV files with this prefix (for tests)")
@@ -68,8 +69,9 @@ def main(argv=None):
         w.set_dose_mode(a.dose_mode)
     if a.guide_tbi:
         w.show_guide()
-        for k in range(7):
+        for k in range(max(0, min(a.guide_steps, 8))):
             w.guide.run(k)
+        w.show_planning(0)
     if a.beam_tab:
         i = {"bev": 0, "3d": 1, "room": 2}.get(a.beam_tab.lower(), 0)
         w.beamviews.setCurrentIndex(i)

@@ -346,13 +346,15 @@ class BeamOverlay:
             col = QColor(*BEAM_COLORS[bi % len(BEAM_COLORS)])
             cur = b.name == st.cur_beam
             cps = b.control_points()
-            show = cps if b.kind != "ARC" else [cps[min(st.cp_index, len(cps) - 1)]] if cur else []
+            # every beam is drawn: static beams with all segments, arcs at the current control point (the divergent
+            # beam as in the 3D view, so the fields of all isocentres and their junction lines show side by side)
+            show = cps if b.kind != "ARC" else [cps[min(st.cp_index, len(cps) - 1)]]
             if b.kind == "ARC" and 2 in ax[:2]:   # coronal/sagittal: whole region covered during the rotation
                 env = self.envelope(b, ax, c)
-                if not env.isEmpty():
-                    fill = QColor(col); fill.setAlpha(34 if cur else 24)
-                    edge = QColor(col); edge.setAlpha(230 if cur else 170)
-                    p.setBrush(QBrush(fill)); p.setPen(QPen(edge, 2.0 if cur else 1.4, Qt.SolidLine))
+                if not env.isEmpty():         # light fill: what the arc covers during the whole rotation
+                    fill = QColor(col); fill.setAlpha(26 if cur else 16)
+                    edge = QColor(col); edge.setAlpha(120 if cur else 80)
+                    p.setBrush(QBrush(fill)); p.setPen(QPen(edge, 1.0, Qt.DotLine))
                     p.drawPath(tf.map(env)); p.setBrush(Qt.NoBrush)
                     r = tf.map(env).boundingRect()
                     p.setPen(edge); p.drawText(r.topLeft() + QPointF(4, 13), b.name)

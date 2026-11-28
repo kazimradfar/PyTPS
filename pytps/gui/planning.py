@@ -90,6 +90,7 @@ class BeamsPanel(QWidget):
         self.gdial.setNotchTarget(15); self.gdial.setFixedSize(56, 56)
         self.gdial.setToolTip("Turn to rotate the gantry of the selected beam (or drag the round handle in the transverse view)")
         self.gspin = _dspin(0, 359, 0, 0, 1, " °"); self.gspin.setWrapping(True)
+        self.gspin.setMinimumWidth(76)
         self.gdial.valueChanged.connect(lambda v: self._gantry((v + 180) % 360, final=not self.gdial.isSliderDown()))
         self.gdial.sliderReleased.connect(lambda: self._gantry(None, final=True))
         self.gspin.valueChanged.connect(lambda v: self._gantry(v, final=True))
@@ -98,6 +99,8 @@ class BeamsPanel(QWidget):
         cw = QWidget(); cl = QHBoxLayout(cw); cl.setContentsMargins(0, 0, 0, 0)
         self.cspin = _dspin(0, 359, 0, 0, 1, " °"); self.cspin.setWrapping(True)
         self.kspin = _dspin(0, 359, 0, 0, 1, " °"); self.kspin.setWrapping(True)
+        for w_ in (self.cspin, self.kspin):
+            w_.setMinimumWidth(70)
         self.cspin.setToolTip("Collimator angle (mouse wheel, arrows, or the diamond handle in the view that faces the beam)")
         self.kspin.setToolTip("Couch angle (mouse wheel, arrows, or the triangle handle in the coronal view)")
         self.cspin.valueChanged.connect(lambda v: self._angle("collimator", v))

@@ -6,8 +6,8 @@ import os
 import numpy as np
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QAction, QActionGroup, QColor, QKeySequence, QPainter
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QLabel, QMainWindow, QMessageBox,
-                               QPlainTextEdit, QSpinBox, QSplitter, QTabWidget, QToolBar, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QGridLayout, QLabel, QMainWindow, QMessageBox,
+                               QPlainTextEdit, QScrollArea, QSpinBox, QSplitter, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 
 from .. import DISCLAIMER, __version__
 from ..core.phantoms import PHANTOMS
@@ -149,9 +149,12 @@ class MainWindow(QMainWindow):
         self.work.addTab(self.contour, "Contouring")
         self.planning = QTabWidget()
         self.beams_panel = BeamsPanel(st); self.rx_panel = PrescriptionPanel(st)
-        self.planning.addTab(self.beams_panel, "Beams"); self.planning.addTab(self.rx_panel, "Prescription")
         self.cost_panel = ConstraintsPanel(st); self.opt_panel = OptimisationPanel(st)
-        self.planning.addTab(self.cost_panel, "IMRT Constraints"); self.planning.addTab(self.opt_panel, "Optimisation")
+        # each planning tab scrolls when the screen is not high enough, instead of squeezing its controls
+        for w_, t_ in ((self.beams_panel, "Beams"), (self.rx_panel, "Prescription"), (self.cost_panel, "IMRT Constraints"),
+                       (self.opt_panel, "Optimisation")):
+            sc = QScrollArea(); sc.setWidget(w_); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.NoFrame)
+            self.planning.addTab(sc, t_)
         self.work.addTab(self.planning, "Planning")
         self.evaluation = EvaluationPanel(st)
         self.work.addTab(self.evaluation, "Evaluation")

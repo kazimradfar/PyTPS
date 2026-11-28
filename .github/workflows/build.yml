@@ -55,6 +55,8 @@ jobs:
           python -m pytps --phantom "Thorax (lung tumour)" --demo-plan 0 --arc --optimise 40 --workspace Evaluation --size 1600x900 --screenshot shots/lung_vmat.png
           python -m pytps --phantom "Head and neck" --demo-plan 0 --arc --optimise 40 --workspace Planning --layout 1+3 --size 1920x1080 --screenshot shots/hn_vmat.png
           python -m pytps --guide-tbi --size 1920x1080 --beam-tab Room --screenshot shots/tbi_guide.png
+          python -m pytps --guide-tbi --guide-steps 3 --size 1366x768 --layout 1+3 --main-view Sagittal --screenshot shots/tbi_fields_sagittal.png
+          python -m pytps --guide-tbi --guide-steps 3 --size 1366x768 --layout 1+3 --main-view Coronal --screenshot shots/tbi_fields_coronal.png
           python -m pytps --phantom "Pelvis (prostate)" --demo-plan 0,90,180,270 --beam-tab Room --size 1600x900 --screenshot shots/room.png
           python -m pytps --phantom "Pelvis (prostate)" --demo-plan 0,90,180,270 --dose-mode wash --layout 1+3 --size 1600x900 --screenshot shots/wash_legend.png
           python -m pytps --phantom "Thorax (lung tumour)" --demo-plan 0,60,180,300 --layout 1 --main-view 3D --size 1366x768 --screenshot shots/single_3d.png
