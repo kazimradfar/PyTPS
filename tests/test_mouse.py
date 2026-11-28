@@ -18,14 +18,15 @@ def _send(app, v, kind, pt, button, buttons, mods=None):
     app.processEvents()
 
 
-def _find_edges(v, step=4):
-    """Screen points where each jaw of the current beam can be grabbed in view v."""
+def _find_edges(v, step=4, beam=None):
+    """Screen points where each jaw of the beam (default: the selected beam) can be grabbed in view v."""
     from PySide6.QtCore import QPointF
+    beam = beam or v.state.cur_beam
     found = {}
     for yy in range(4, v.height() - 4, step):
         for xx in range(4, v.width() - 4, step):
             h = v._field_hit(QPointF(xx, yy))
-            if h is not None and h[0] == "jaw" and h[2] not in found:
+            if h is not None and h[0] == "jaw" and h[1] == beam and h[2] not in found:
                 found[h[2]] = QPointF(xx, yy)
         if len(found) == 4:
             break
@@ -52,14 +53,14 @@ def _check_view(app, w, v, b, results, tag):
     st = w.state
     jaws0 = (b.x1, b.x2, b.y1, b.y2)
     st.set_cursor(b.iso.copy()); st.changed.emit("beam"); app.processEvents()
-    edges = _find_edges(v)
+    edges = _find_edges(v, beam=b.name)
     for jaw, pt in edges.items():
         for sense in (+1, -1):                       # +1 larger field, -1 smaller
             b.x1, b.x2, b.y1, b.y2 = jaws0; b.cps = []
             st.set_cursor(b.iso.copy()); st.changed.emit("beam"); app.processEvents()
             h = v._field_hit(pt)
-            if h is None or h[2] != jaw:              # the layout may have changed after the last click
-                pts = _find_edges(v)
+            if h is None or h[1] != b.name or h[2] != jaw:              # the layout may have changed after the last click
+                pts = _find_edges(v, beam=b.name)
                 if jaw not in pts:
                     results.append((tag, jaw, sense, "edge lost")); continue
                 pt = pts[jaw]
