@@ -76,11 +76,11 @@ class BeamsPanel(QWidget):
                           ("Crosshair", self.iso_cursor, "Isocentre at the crosshair"),
                           ("Target centre", self.iso_target, "Isocentre at the centre of the target")):
             b = QPushButton(t); b.setToolTip(tip); b.clicked.connect(f); r2.addWidget(b)
-        self.iso_all = QCheckBox("all beams")
+        lay.addLayout(r2)
+        self.iso_all = QCheckBox("Apply to all beams (unticked: only the selected beam)")
         self.iso_all.setToolTip("Unticked: only the selected beam gets the new isocentre (e.g. separate fields for TBI).\n"
                                 "Ticked: every beam of the plan.")
-        r2.addWidget(self.iso_all)
-        lay.addLayout(r2)
+        lay.addWidget(self.iso_all)
 
         g2 = QGroupBox("Selected beam")
         f2 = QFormLayout(g2)
@@ -96,7 +96,6 @@ class BeamsPanel(QWidget):
         self.gspin.valueChanged.connect(lambda v: self._gantry(v, final=True))
         gl2.addWidget(self.gdial); gl2.addWidget(self.gspin); gl2.addStretch(1)
         f2.addRow("Gantry", gw)
-        cw = QWidget(); cl = QHBoxLayout(cw); cl.setContentsMargins(0, 0, 0, 0)
         self.cspin = _dspin(0, 359, 0, 0, 1, " °"); self.cspin.setWrapping(True)
         self.kspin = _dspin(0, 359, 0, 0, 1, " °"); self.kspin.setWrapping(True)
         for w_ in (self.cspin, self.kspin):
@@ -105,8 +104,7 @@ class BeamsPanel(QWidget):
         self.kspin.setToolTip("Couch angle (mouse wheel, arrows, or the triangle handle in the coronal view)")
         self.cspin.valueChanged.connect(lambda v: self._angle("collimator", v))
         self.kspin.valueChanged.connect(lambda v: self._angle("couch", v))
-        cl.addWidget(QLabel("Coll")); cl.addWidget(self.cspin); cl.addWidget(QLabel("Couch")); cl.addWidget(self.kspin); cl.addStretch(1)
-        f2.addRow("", cw)
+        f2.addRow("Collimator", self.cspin); f2.addRow("Couch", self.kspin)
         self.mlc_target = QComboBox(); self.mlc_margin = _dspin(-20, 50, 1, 5, 0.5, " mm")
         self.mlc_target.currentTextChanged.connect(lambda t: self._set("mlc_target", t)); self.mlc_margin.valueChanged.connect(lambda v: self._set("mlc_margin", v))
         f2.addRow("MLC fits to", self.mlc_target); f2.addRow("MLC margin", self.mlc_margin)

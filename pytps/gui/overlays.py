@@ -373,9 +373,9 @@ class BeamOverlay:
                     q = np.array([[pt[ax[0]], pt[ax[1]]] for pt in pts])
                     cen = q.mean(0); order = np.argsort(np.arctan2(q[:, 1] - cen[1], q[:, 0] - cen[0]))
                     poly = QPolygonF([S(*q[i]) for i in order])
-                    fill = QColor(col); fill.setAlpha(38 if cur else 18)
-                    p.setBrush(QBrush(fill)); edge = QColor(col); edge.setAlpha(230 if cur else 140)
-                    p.setPen(QPen(edge, 2.0 if cur else 1.2)); p.drawPolygon(poly)
+                    fill = QColor(col); fill.setAlpha(38 if cur else 24)
+                    p.setBrush(QBrush(fill)); edge = QColor(col); edge.setAlpha(240 if cur else 210)
+                    p.setPen(QPen(edge, 2.2 if cur else 1.6)); p.drawPolygon(poly)
                     p.setBrush(Qt.NoBrush)
                 # central axis (dashed) when it lies close to this plane
                 src = b.iso + fr.source
