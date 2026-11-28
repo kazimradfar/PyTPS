@@ -224,8 +224,8 @@ def test_move_fields_separately_for_tbi():
     assert st.cur_beam == "B1"
     # isocentre buttons: only the selected beam unless "all beams" is ticked
     st.cur_beam = "B2"; bp.refresh()
-    st.set_cursor(iso0 + np.array([0, 0, -200.0])); bp.iso_all.setChecked(False); bp.iso_cursor()
-    assert np.allclose(b2.iso, iso0 + np.array([0, 0, -200.0])) and not np.allclose(b1.iso, b2.iso)
+    st.set_cursor(iso0 + np.array([0, 0, -60.0])); bp.iso_all.setChecked(False); bp.iso_cursor()
+    assert np.allclose(b2.iso, st.cursor) and not np.allclose(b1.iso, b2.iso)
     bp.iso_all.setChecked(True); bp.iso_cursor()
     assert all(np.allclose(q.iso, b2.iso) for q in p.beams)
     w.close()
