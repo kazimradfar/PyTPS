@@ -288,7 +288,11 @@ class BeamOverlay:
             cov = np.zeros(len(Z), bool)
             side = u0
             for b in beams:
-                cov |= self._covered(b, self._sampled_cps(b), pts)
+                ck = ("line", b.name, b.kind, b.gantry, b.arc_stop, b.arc_dir, b.cp_spacing, b.collimator, b.couch, b.x1, b.x2,
+                      b.y1, b.y2, tuple(np.round(b.iso, 1)), b.orientation, len(b.cps), ax[2], round(c, 1), round(u0, 1), len(Z), Z[0])
+                if ck not in self._env:
+                    self._env[ck] = self._covered(b, self._sampled_cps(b), pts)
+                cov |= self._env[ck]
                 env = self.envelope(b, ax, c)
                 if not env.isEmpty():
                     r = env.boundingRect()
