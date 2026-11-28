@@ -229,3 +229,38 @@ def test_move_fields_separately_for_tbi():
     bp.iso_all.setChecked(True); bp.iso_cursor()
     assert all(np.allclose(q.iso, b2.iso) for q in p.beams)
     w.close()
+
+
+def test_all_tbi_arcs_and_junctions_visible():
+    """VMAT-TBI: every arc (not only the selected one) is drawn in the coronal and sagittal views, and the overlap of
+    the fields of neighbouring isocentres is measured there."""
+    import numpy as np
+    from pytps.gui.main_window import MainWindow
+    app = _app()
+    w = MainWindow(); w.resize(1500, 900); w.show(); app.processEvents()
+    w.show_guide()
+    for k in range(3):                                    # phantom, contours, 3 isocentres x 2 arcs
+        w.guide.run(k)
+    st = w.state; p = st.plan
+    arcs = [b for b in p.beams if b.kind == "ARC"]
+    assert len(arcs) == 6
+    ov = w.beam_ov
+    for name in ("coronal", "sagittal"):
+        v = w.views[1] if name == "coronal" else w.views[2]
+        ax = v._ax()
+        c = float(arcs[0].iso[ax[2]])
+        for b in arcs:                                    # each arc covers a region of this plane
+            assert not ov.envelope(b, ax, c).isEmpty(), (name, b.name)
+        j = ov.junction_data(ax, c)
+        assert len(j) == 2, (name, j)
+        for lo, hi, overlap, side, na, nb in j:
+            assert 5 < overlap < 60, (name, overlap)      # the thesis layout overlaps the fields by about 2 cm
+    # pulling isocentre B away makes a gap, which is reported as a negative overlap
+    b_iso = sorted({tuple(b.iso) for b in arcs}, key=lambda t: t[2])[1]
+    for b in arcs:
+        if tuple(b.iso) == b_iso:
+            b.iso = b.iso + np.array([0, 0, 60.0])
+    v = w.views[1]; ax = v._ax()
+    j = ov.junction_data(ax, float(arcs[0].iso[ax[2]]))
+    assert min(x[2] for x in j) < 0
+    w.close()

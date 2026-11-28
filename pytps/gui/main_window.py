@@ -258,6 +258,7 @@ class MainWindow(QMainWindow):
             if k == "lines":
                 a.setChecked(True)
         a = self._act("Show beams in the slices", lambda on: self.show_beams(on), checkable=True); a.setChecked(True); m.addAction(a)
+        a = self._act("Show field junctions (overlap / gap)", lambda on: self.show_junctions(on), checkable=True); a.setChecked(True); m.addAction(a)
         # Plan management and DICOM RT
         m = mb.addMenu("Pl&ans")
         for t, f in (("New plan", self.new_plan), ("Copy plan", self.copy_plan), ("Rename plan…", self.rename_plan),
@@ -531,6 +532,11 @@ class MainWindow(QMainWindow):
         if k == "difference" and self.state.compare is None:
             self._message("Choose a plan in Evaluation ▸ Compare with to show the dose difference")
         self.dose_ov.mode = k
+        for v in self.views[:3]:
+            v.update()
+
+    def show_junctions(self, on):
+        self.beam_ov.junctions = bool(on)
         for v in self.views[:3]:
             v.update()
 

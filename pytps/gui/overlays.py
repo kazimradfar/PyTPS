@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPolygonF, QTransform
 
 from ..core.beams import SAD, Frame
 
@@ -163,10 +163,108 @@ def _pyramid_section(fr: Frame, cp, axis_n, c):
     return pts
 
 
+def _section_polygon(b, cp, ax, c):
+    """Field section of one control point in the plane coordinate[ax[2]] = c, as a polygon in view coordinates (mm)."""
+    fr = Frame(cp, b.iso, b.orientation)
+    pts = _pyramid_section(fr, cp, ax[2], c)
+    if len(pts) < 3:
+        return None
+    q = np.array([[pt[ax[0]], pt[ax[1]]] for pt in pts])
+    cen = q.mean(0)
+    order = np.argsort(np.arctan2(q[:, 1] - cen[1], q[:, 0] - cen[0]))
+    return QPolygonF([QPointF(*q[i]) for i in order])
+
+
 class BeamOverlay:
     def __init__(self, state):
         self.state = state
         self.show = True
+        self.junctions = True        # overlap / gap labels between fields of different isocentres
+        self._env = {}               # cache of field envelopes per beam and plane
+
+    def envelope(self, b, ax, c):
+        """Region of the plane covered by the field over all its control points (an arc: the whole rotation),
+        as a QPainterPath in view coordinates (mm). Cached."""
+        key = (b.name, b.kind, b.gantry, b.arc_stop, b.arc_dir, b.cp_spacing, b.collimator, b.couch, b.x1, b.x2, b.y1, b.y2,
+               tuple(np.round(b.iso, 1)), b.orientation, len(b.cps), ax[2], round(c, 1))
+        if key in self._env:
+            return self._env[key]
+        cps = b.control_points()
+        if b.kind == "ARC":
+            k = max(1, len(cps) // 36)
+            cps = cps[::k] + ([cps[-1]] if (len(cps) - 1) % k else [])
+        path = QPainterPath()
+        path.setFillRule(Qt.WindingFill)
+        for cp in cps:
+            poly = _section_polygon(b, cp, ax, c)
+            if poly is not None:
+                sub = QPainterPath(); sub.addPolygon(poly); sub.closeSubpath()
+                path = path.united(sub)
+        if len(self._env) > 400:
+            self._env.clear()
+        self._env[key] = path
+        return path
+
+    @staticmethod
+    def _transform(S):
+        p00, p10, p01 = S(0.0, 0.0), S(1.0, 0.0), S(0.0, 1.0)
+        return QTransform(p10.x() - p00.x(), p10.y() - p00.y(), p01.x() - p00.x(), p01.y() - p00.y(), p00.x(), p00.y())
+
+    def junction_data(self, ax, c):
+        """Junctions between the fields of neighbouring isocentres along the head-foot direction (z), measured in the
+        plane coordinate[ax[2]] = c including the divergence: [(z_lo, z_hi, overlap_mm, side, names_a, names_b)];
+        a negative overlap is a gap. Empty if the view has no z axis or there is only one isocentre."""
+        st = self.state
+        if st.plan is None or 2 not in ax[:2]:
+            return []
+        k = ax[:2].index(2)                       # which view axis is z
+        groups = {}
+        for b in st.plan.beams:
+            if not b.visible:
+                continue
+            env = self.envelope(b, ax, c)
+            if env.isEmpty():
+                continue
+            key = tuple(np.round(b.iso, 0))
+            g = groups.setdefault(key, {"path": QPainterPath(), "names": []})
+            g["path"] = g["path"].united(env); g["names"].append(b.name)
+        if len(groups) < 2:
+            return []
+        boxes = []
+        for g in groups.values():
+            r = g["path"].boundingRect()
+            lo, hi = (r.left(), r.right()) if k == 0 else (r.top(), r.bottom())
+            olo, ohi = (r.top(), r.bottom()) if k == 0 else (r.left(), r.right())
+            boxes.append((lo, hi, olo, ohi, g["names"]))
+        boxes.sort(key=lambda t: (t[0] + t[1]) / 2)
+        out = []
+        for a_, b_ in zip(boxes[:-1], boxes[1:]):
+            lo, hi = max(a_[0], b_[0]), min(a_[1], b_[1])
+            out.append((lo, hi, hi - lo, max(a_[3], b_[3]) + 8, a_[4], b_[4]))
+        return out
+
+    def _junctions(self, p, view, S, ax, c, tf):
+        data = self.junction_data(ax, c)
+        if not data:
+            return
+        k = ax[:2].index(2)
+        f = p.font(); f.setBold(True); p.setFont(f)
+        for lo, hi, ov, side, _na, _nb in data:
+            col = QColor(90, 220, 140) if ov > 0 else QColor(255, 80, 80)
+            p.setPen(QPen(col, 2))
+            if k == 1:
+                p1, p2 = tf.map(QPointF(side, lo)), tf.map(QPointF(side, hi))
+            else:
+                p1, p2 = tf.map(QPointF(lo, side)), tf.map(QPointF(hi, side))
+            p.drawLine(p1, p2)
+            for q in (p1, p2):
+                if k == 1:
+                    p.drawLine(q + QPointF(-4, 0), q + QPointF(4, 0))
+                else:
+                    p.drawLine(q + QPointF(0, -4), q + QPointF(0, 4))
+            mid = (p1 + p2) / 2
+            p.drawText(mid + QPointF(8, 4), f"overlap {ov / 10:.1f} cm" if ov > 0 else f"GAP {-ov / 10:.1f} cm")
+        f.setBold(False); p.setFont(f)
 
     def __call__(self, p, view):
         st = self.state
@@ -175,6 +273,7 @@ class BeamOverlay:
         _, S, _ = view.mapping()
         ax = view._ax()
         n, c = ax[2], float(st.cursor[ax[2]])
+        tf = self._transform(S)
         for bi, b in enumerate(st.plan.beams):
             if not b.visible:
                 continue
@@ -182,6 +281,15 @@ class BeamOverlay:
             cur = b.name == st.cur_beam
             cps = b.control_points()
             show = cps if b.kind != "ARC" else [cps[min(st.cp_index, len(cps) - 1)]] if cur else []
+            if b.kind == "ARC":           # whole region covered during the rotation, so every arc and its junctions show
+                env = self.envelope(b, ax, c)
+                if not env.isEmpty():
+                    fill = QColor(col); fill.setAlpha(34 if cur else 24)
+                    edge = QColor(col); edge.setAlpha(230 if cur else 170)
+                    p.setBrush(QBrush(fill)); p.setPen(QPen(edge, 2.0 if cur else 1.4, Qt.SolidLine))
+                    p.drawPath(tf.map(env)); p.setBrush(Qt.NoBrush)
+                    r = tf.map(env).boundingRect()
+                    p.setPen(edge); p.drawText(r.topLeft() + QPointF(4, 13), b.name)
             if b.kind == "ARC":           # arc: central axes of all control points, faint
                 col2 = QColor(col); col2.setAlpha(70 if cur else 40)
                 p.setPen(QPen(col2, 1))
@@ -232,6 +340,8 @@ class BeamOverlay:
             if abs(b.iso[n] - c) < 3:
                 q = S(b.iso[ax[0]], b.iso[ax[1]])
                 p.setPen(QPen(QColor(255, 80, 80), 2)); p.drawLine(q + QPointF(-7, 0), q + QPointF(7, 0)); p.drawLine(q + QPointF(0, -7), q + QPointF(0, 7))
+        if self.junctions:
+            self._junctions(p, view, S, ax, c, tf)
 
 
 class PointOverlay:
