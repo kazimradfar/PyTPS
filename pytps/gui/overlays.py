@@ -182,29 +182,57 @@ class BeamOverlay:
         self.junctions = True        # overlap / gap labels between fields of different isocentres
         self._env = {}               # cache of field envelopes per beam and plane
 
-    def envelope(self, b, ax, c):
-        """Region of the plane covered by the field over all its control points (an arc: the whole rotation),
-        as a QPainterPath in view coordinates (mm). Cached."""
-        key = (b.name, b.kind, b.gantry, b.arc_stop, b.arc_dir, b.cp_spacing, b.collimator, b.couch, b.x1, b.x2, b.y1, b.y2,
-               tuple(np.round(b.iso, 1)), b.orientation, len(b.cps), ax[2], round(c, 1))
-        key = key + (self._body_key(),)
-        if key in self._env:
-            return self._env[key]
+    def _sampled_cps(self, b):
         cps = b.control_points()
         if b.kind == "ARC":
             k = max(1, len(cps) // 36)
             cps = cps[::k] + ([cps[-1]] if (len(cps) - 1) % k else [])
-        path = QPainterPath()
-        path.setFillRule(Qt.WindingFill)
+        return cps
+
+    @staticmethod
+    def _covered(b, cps, pts):
+        """Which patient points (N, 3) lie inside the field (jaws) of any of the control points."""
+        inside = np.zeros(len(pts), bool)
         for cp in cps:
-            poly = _section_polygon(b, cp, ax, c)
-            if poly is not None:
-                sub = QPainterPath(); sub.addPolygon(poly); sub.closeSubpath()
-                path = path.united(sub)
-        band = self._body_band(ax, path.boundingRect())   # only inside the body width (not the far, diverged beam)
-        if band is not None and not path.isEmpty():
-            clipped = path.intersected(band)
-            path = clipped if not clipped.isEmpty() else path
+            fr = Frame(cp, b.iso, b.orientation)
+            u, v, d = fr.project(pts)
+            inside |= (d > 0) & (u >= cp.x1) & (u <= cp.x2) & (v >= cp.y1) & (v <= cp.y2)
+        return inside
+
+    def _grid(self, ax, step=4.0):
+        """Sample positions in view coordinates: across the body width (+1 cm) and along the whole image."""
+        ext = self.state.image.extent()
+        lim = [list(ext[ax[0]]), list(ext[ax[1]])]
+        bb = self._body_bounds()
+        if bb is not None and 2 in ax[:2]:
+            k = ax[:2].index(2)
+            lo, hi = bb[ax[1 - k]]
+            lim[1 - k] = [max(lim[1 - k][0], lo - 10), min(lim[1 - k][1], hi + 10)]
+        U = np.arange(lim[0][0], lim[0][1] + step / 2, step)
+        V = np.arange(lim[1][0], lim[1][1] + step / 2, step)
+        return U, V
+
+    def envelope(self, b, ax, c):
+        """Region of the plane coordinate[ax[2]] = c covered by the field over all its control points (an arc: the
+        whole rotation), inside the body width, as a QPainterPath in view coordinates (mm). Cached."""
+        key = (b.name, b.kind, b.gantry, b.arc_stop, b.arc_dir, b.cp_spacing, b.collimator, b.couch, b.x1, b.x2, b.y1, b.y2,
+               tuple(np.round(b.iso, 1)), b.orientation, len(b.cps), ax[2], round(c, 1), self._body_key())
+        if key in self._env:
+            return self._env[key]
+        path = QPainterPath()
+        if self.state.image is not None:
+            from skimage import measure
+            U, V = self._grid(ax)
+            P = np.zeros((len(V), len(U), 3))
+            P[..., ax[0]] = U[None, :]; P[..., ax[1]] = V[:, None]; P[..., ax[2]] = c
+            m = self._covered(b, self._sampled_cps(b), P.reshape(-1, 3)).reshape(len(V), len(U))
+            if m.any():
+                mp = np.pad(m.astype(float), 1)
+                du, dv = (U[1] - U[0]) if len(U) > 1 else 1.0, (V[1] - V[0]) if len(V) > 1 else 1.0
+                path.setFillRule(Qt.OddEvenFill)
+                for cont in measure.find_contours(mp, 0.5):
+                    poly = QPolygonF([QPointF(U[0] + (col - 1) * du, V[0] + (row - 1) * dv) for row, col in cont])
+                    path.addPolygon(poly); path.closeSubpath()
         if len(self._env) > 400:
             self._env.clear()
         self._env[key] = path
@@ -213,7 +241,7 @@ class BeamOverlay:
     def _body_key(self):
         st = self.state
         ss = st.ss
-        return (id(ss), getattr(ss, "version", 0)) if ss is not None else None
+        return (id(ss), getattr(ss, "version", 0), id(st.image)) if ss is not None else None
 
     def _body_bounds(self):
         """(min, max) patient coordinates of the body outline along x, y, z (None without an EXTERNAL structure)."""
@@ -236,68 +264,43 @@ class BeamOverlay:
         self._bb = out
         return out
 
-    def _body_band(self, ax, br):
-        """Clip region: across the body (+1 cm) in the view direction that is not head-foot, over the whole length
-        of the field (br: its bounding rectangle) along z."""
-        bb = self._body_bounds()
-        if bb is None or 2 not in ax[:2]:
-            return None
-        k = ax[:2].index(2)
-        lo, hi = bb[ax[1 - k]]
-        lo, hi = lo - 10, hi + 10
-        r = QPainterPath()
-        if k == 1:
-            r.addRect(QRectF(lo, br.top() - 10, hi - lo, br.height() + 20))
-        else:
-            r.addRect(QRectF(br.left() - 10, lo, br.width() + 20, hi - lo))
-        return r
-
-    @staticmethod
-    def _transform(S):
-        p00, p10, p01 = S(0.0, 0.0), S(1.0, 0.0), S(0.0, 1.0)
-        return QTransform(p10.x() - p00.x(), p10.y() - p00.y(), p01.x() - p00.x(), p01.y() - p00.y(), p00.x(), p00.y())
-
     def junction_data(self, ax, c):
         """Junctions between the fields of neighbouring isocentres along the head-foot direction (z), measured in the
-        plane coordinate[ax[2]] = c including the divergence: [(z_lo, z_hi, overlap_mm, side, names_a, names_b)];
-        a negative overlap is a gap. Empty if the view has no z axis or there is only one isocentre."""
+        plane coordinate[ax[2]] = c on the line through the isocentres (1 mm steps, divergence included):
+        [(z_lo, z_hi, overlap_mm, side, names_a, names_b)]; a negative overlap is a gap. Empty if the view has no z axis
+        or there is only one isocentre."""
         st = self.state
-        if st.plan is None or 2 not in ax[:2]:
+        if st.plan is None or st.image is None or 2 not in ax[:2]:
             return []
-        k = ax[:2].index(2)                       # which view axis is z
+        k = ax[:2].index(2)
         groups = {}
         for b in st.plan.beams:
-            if not b.visible:
-                continue
-            env = self.envelope(b, ax, c)
-            if env.isEmpty():
-                continue
-            key = tuple(np.round(b.iso, 0))
-            g = groups.setdefault(key, {"path": QPainterPath(), "names": [], "iso": b.iso})
-            g["path"] = g["path"].united(env); g["names"].append(b.name)
+            if b.visible:
+                groups.setdefault(tuple(np.round(b.iso, 0)), []).append(b)
         if len(groups) < 2:
             return []
+        z0, z1 = st.image.extent()[2]
+        Z = np.arange(z0 - 50, z1 + 50, 1.0)
         boxes = []
-        for g in groups.values():
-            full = g["path"].boundingRect()
-            u0 = float(g["iso"][ax[1 - k]])                 # measured on the line through the isocentre
-            strip = QPainterPath()
-            if k == 1:
-                strip.addRect(QRectF(u0 - 2, full.top() - 10, 4, full.height() + 20))
-            else:
-                strip.addRect(QRectF(full.left() - 10, u0 - 2, full.width() + 20, 4))
-            line = g["path"].intersected(strip)
-            lr = line.boundingRect() if not line.isEmpty() else full
-            # z range from the isocentre line, the other direction from the whole field (for placing the label)
-            r = QRectF(full.left(), lr.top(), full.width(), lr.height()) if k == 1 else QRectF(lr.left(), full.top(), lr.width(), full.height())
-            lo, hi = (r.left(), r.right()) if k == 0 else (r.top(), r.bottom())
-            olo, ohi = (r.top(), r.bottom()) if k == 0 else (r.left(), r.right())
-            boxes.append((lo, hi, olo, ohi, g["names"]))
+        for key, beams in groups.items():
+            u0 = float(beams[0].iso[ax[1 - k]])
+            pts = np.zeros((len(Z), 3)); pts[:, 2] = Z; pts[:, ax[1 - k]] = u0; pts[:, ax[2]] = c
+            cov = np.zeros(len(Z), bool)
+            side = u0
+            for b in beams:
+                cov |= self._covered(b, self._sampled_cps(b), pts)
+                env = self.envelope(b, ax, c)
+                if not env.isEmpty():
+                    r = env.boundingRect()
+                    side = max(side, r.bottom() if k == 0 else r.right())
+            if cov.any():
+                zz = Z[cov]
+                boxes.append((float(zz.min()), float(zz.max()), side, [b.name for b in beams]))
         boxes.sort(key=lambda t: (t[0] + t[1]) / 2)
         out = []
         for a_, b_ in zip(boxes[:-1], boxes[1:]):
             lo, hi = max(a_[0], b_[0]), min(a_[1], b_[1])
-            out.append((lo, hi, hi - lo, max(a_[3], b_[3]) + 8, a_[4], b_[4]))
+            out.append((lo, hi, hi - lo, max(a_[2], b_[2]) + 8, a_[3], b_[3]))
         return out
 
     def _junctions(self, p, view, S, ax, c, tf):

@@ -254,7 +254,7 @@ def test_all_tbi_arcs_and_junctions_visible():
             assert not e.isEmpty(), (name, b.name, ov._body_bounds())
             r = e.boundingRect()
             bb = ov._body_bounds()[ax[0]]
-            assert r.left() >= bb[0] - 11 and r.right() <= bb[1] + 11, (name, b.name, r, bb)   # inside the body width
+            assert r.left() >= bb[0] - 15 and r.right() <= bb[1] + 15, (name, b.name, r, bb)   # inside the body width
         j = ov.junction_data(ax, c)
         assert len(j) == 2, (name, j)
         for lo, hi, overlap, side, na, nb in j:
