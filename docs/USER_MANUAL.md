@@ -324,6 +324,12 @@ Any field can be grabbed, not only the selected one; grabbing a field selects it
   (for example along the whole body for TBI). Hold **Ctrl** while dragging to move every beam that shares this
   isocentre together (a set-up shift; arcs keep their MLC). Tip for TBI: add a field, press **Copy**, and drag the
   copy's isocentre to its place in the coronal view; the field edges show the overlap with the next field.
+- **All fields and their junctions in the coronal and sagittal views:** every field is drawn, selected or not. An
+  arc is shown as the whole region it covers during its rotation (within the body width), so the fields of all
+  isocentres and their overlaps are visible at once. Between the fields of neighbouring isocentres a bracket shows
+  the junction measured on the line through the isocentres in the current slice, divergence included:
+  **overlap x cm** in green, or **GAP x cm** in red. Drag a field edge or an isocentre and the value updates.
+  Switch the labels off in **Planning ▸ Show field junctions**.
 - **Rotate:** the selected beam has rotation handles in the views where a rotation turns in the view plane.
   Point at a handle (open hand) and drag it around the isocentre: 1° steps, 5° steps with Shift held.
 
@@ -563,7 +569,8 @@ whole-body VMAT for total body irradiation. Each step explains what to do and ho
 2. **Contours**: Lungs = Lung_R ∪ Lung_L; PTV_TBI = BODY contracted by 3 mm minus the lungs contracted by 2 mm.
 3. **Isocentres and arcs**: three isocentres (A head–thorax, B abdomen, C pelvis–thighs), fields overlapping by about
    2 cm and extending 2 cm beyond the body; two full arcs per isocentre, 6 MV, X jaws ±20 cm, MLC optimised.
-   The check reports each overlap and any gap.
+   The check reports each overlap and any gap, and the coronal and sagittal views label each junction (overlap or
+   gap in cm) while you move the fields.
 4. **Prescription**: 12 Gy in 6 fractions, normalised to the mean PTV dose, 8 mm dose grid.
 5. **IMRT constraints**: PTV target penalty 12 Gy, PTV quadratic overdose 13.2 Gy, lungs parallel 8 Gy with 55 %
    mean organ damage, lungs quadratic overdose 10 Gy, body maximum 14.4 Gy.
