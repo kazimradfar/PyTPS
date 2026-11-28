@@ -102,7 +102,7 @@ class BeamsPanel(QWidget):
         self.kspin.setToolTip("Couch angle (mouse wheel, arrows, or the triangle handle in the coronal view)")
         self.cspin.valueChanged.connect(lambda v: self._angle("collimator", v))
         self.kspin.valueChanged.connect(lambda v: self._angle("couch", v))
-        cl.addWidget(QLabel("Collimator")); cl.addWidget(self.cspin); cl.addWidget(QLabel("Couch")); cl.addWidget(self.kspin); cl.addStretch(1)
+        cl.addWidget(QLabel("Coll")); cl.addWidget(self.cspin); cl.addWidget(QLabel("Couch")); cl.addWidget(self.kspin); cl.addStretch(1)
         f2.addRow("", cw)
         self.mlc_target = QComboBox(); self.mlc_margin = _dspin(-20, 50, 1, 5, 0.5, " mm")
         self.mlc_target.currentTextChanged.connect(lambda t: self._set("mlc_target", t)); self.mlc_margin.valueChanged.connect(lambda v: self._set("mlc_margin", v))
